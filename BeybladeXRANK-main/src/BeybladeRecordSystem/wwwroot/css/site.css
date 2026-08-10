@@ -1,0 +1,21 @@
+html { font-size: 16px; position: relative; min-height: 100%; }
+body { margin-bottom: 60px; background: #f8f9fa; }
+.navbar-brand { font-weight: 700; }
+.btn { min-height: 44px; }
+.card { border-radius: .75rem; }
+.sticky-top { z-index: 1020; }
+@media (max-width: 575.98px) {
+  .container { padding-left: 1rem; padding-right: 1rem; }
+  h1 { font-size: 1.6rem; }
+  .table { font-size: .875rem; }
+  .table th, .table td { padding: .5rem .35rem; white-space: nowrap; }
+}
+
+.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
+  color: var(--bs-secondary-color);
+  text-align: end;
+}
+
+.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
+  text-align: start;
+}

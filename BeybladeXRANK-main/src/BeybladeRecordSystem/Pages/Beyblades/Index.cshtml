@@ -1,0 +1,8 @@
+@page
+@model BeybladeRecordSystem.Pages.Beyblades.IndexModel
+@{ ViewData["Title"] = "我的陀螺"; }
+<div class="d-flex justify-content-between align-items-center mb-3"><h1>我的陀螺</h1><a asp-page="Create" class="btn btn-primary">新增陀螺</a></div>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+@if (!Model.Beyblades.Any()) { <div class="alert alert-secondary">尚未建立陀螺。</div> }
+<div class="list-group">@foreach (var beyblade in Model.Beyblades) { <div class="list-group-item d-flex justify-content-between align-items-center"><span>@beyblade.Name</span><span><a asp-page="Edit" asp-route-id="@beyblade.Id" class="btn btn-outline-primary btn-sm">編輯</a><form method="post" asp-page-handler="Delete" class="d-inline"><input type="hidden" name="id" value="@beyblade.Id" /><button class="btn btn-outline-danger btn-sm" onclick="return confirm('確定刪除 @beyblade.Name？')">刪除</button></form></span></div>}</div>

@@ -1,0 +1,4 @@
+@page
+@model IndexModel
+@{ ViewData["Title"] = "首頁"; }
+@if (User.Identity?.IsAuthenticated == true) { <div class="py-3"><h1 class="display-6">Beyblade 戰績</h1><p class="lead">歡迎回來，@User.Identity.Name。</p><div class="d-grid gap-3 col-md-6"><a asp-page="/Battles/Create" class="btn btn-primary btn-lg py-3">開始對戰</a><a asp-page="/Beyblades/Index" class="btn btn-outline-primary btn-lg py-3">我的陀螺</a><a asp-page="/Statistics/Index" class="btn btn-outline-primary btn-lg py-3">我的戰績</a></div></div> } else { <div class="text-center py-5"><h1 class="display-5">Beyblade 戰績</h1><p class="lead">記錄每一場 1v1 對戰。</p><a asp-page="/Account/Login" class="btn btn-primary btn-lg">登入</a><a asp-page="/Account/Register" class="btn btn-outline-primary btn-lg">建立帳號</a></div> }

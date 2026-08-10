@@ -1,0 +1,30 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Statistics.OpponentModel
+@{ ViewData["Title"] = "對手陀螺戰績"; }
+<h1>vs @Model.OpponentDisplayName</h1>
+<p class="text-muted">以我的陀螺分組，查看各顆陀螺對上此對手陀螺的紀錄。</p>
+@if (!Model.Rows.Any())
+{
+    <div class="alert alert-secondary">尚無已完成的對戰紀錄。</div>
+}
+else
+{
+    @foreach (var group in Model.Rows.GroupBy(x => x.MyBeybladeName).OrderBy(x => x.Key))
+    {
+        <section class="card mb-3">
+            <div class="card-header fw-semibold">我的陀螺：@group.Key</div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>對手陀螺</th><th>勝/敗</th><th>勝率</th><th>得分</th><th>失分</th></tr></thead>
+                    <tbody>
+                    @foreach (var item in group)
+                    {
+                        <tr><td>@item.OpponentBeybladeName</td><td>@item.Wins/@item.Losses</td><td>@item.WinRate.ToString("P0")</td><td>@item.Score</td><td>@item.AgainstScore</td></tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}
+<a asp-page="Index" class="btn btn-link">回我的戰績</a>

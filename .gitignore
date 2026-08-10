@@ -1,0 +1,28 @@
+# .NET build output and local tools
+**/bin/
+**/obj/
+**/.vs/
+**/.tools/
+
+# Local runtime data: never publish player records, SQLite files, or authentication keys
+**/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets and machine-specific configuration
+.env
+.env.*
+appsettings.Local.json
+appsettings.Production.json
+*.pfx
+*.pem
+*.key
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

@@ -1,0 +1,4 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Battles.DetailsModel
+@{ ViewData["Title"] = "對戰陣容"; }
+<h1>對戰陣容</h1><div class="card mb-3"><div class="card-body"><div class="d-flex justify-content-between"><strong>@Model.Battle.PlayerA.DisplayName</strong><span>vs</span><strong>@Model.Battle.PlayerB.DisplayName</strong></div><hr />@foreach (var item in Model.Battle.Lineups.Where(x => x.IsCurrent).OrderBy(x => x.PositionNo)) { <div class="row py-2 border-bottom"><div class="col-5">@item.PositionNo 號：@item.PlayerABeybladeNameSnapshot</div><div class="col-2 text-center">vs</div><div class="col-5">@item.PositionNo 號：@item.PlayerBBeybladeNameSnapshot</div></div> }</div></div>@if (Model.IsLocked) { <div class="alert alert-success">陣容已鎖定。確認後開始第一個 Round。</div><form method="post" asp-page-handler="Start"><input type="hidden" name="id" value="@Model.Battle.Id" /><button class="btn btn-primary btn-lg">開始對戰</button></form> }

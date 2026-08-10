@@ -1,0 +1,6 @@
+@page
+@model BeybladeRecordSystem.Pages.Account.SettingsModel
+@{ ViewData["Title"] = "帳號設定"; }
+<h1>帳號設定</h1>
+@if (TempData["Success"] is string message) { <div class="alert alert-success">@message</div> }
+<form method="post" class="card card-body col-md-6"><div asp-validation-summary="ModelOnly" class="text-danger"></div><label asp-for="DisplayName" class="form-label">顯示名稱</label><input asp-for="DisplayName" class="form-control mb-3" /><button class="btn btn-primary">儲存</button></form>

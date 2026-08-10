@@ -1,0 +1,4 @@
+@page
+@model BeybladeRecordSystem.Pages.Beyblades.CreateModel
+@{ ViewData["Title"] = "新增陀螺"; }
+<h1>新增陀螺</h1><form method="post" class="card card-body col-md-6"><div asp-validation-summary="ModelOnly" class="text-danger"></div><label asp-for="Name" class="form-label">名稱</label><input asp-for="Name" class="form-control mb-3" autofocus /><button class="btn btn-primary">新增</button><a asp-page="Index" class="btn btn-link">取消</a></form>

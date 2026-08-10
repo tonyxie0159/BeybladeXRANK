@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BeybladeRecordSystem/BeybladeRecordSystem.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BeybladeRecordSystem.Tests/BeybladeRecordSystem.Tests.csproj" />
+  </Folder>
+</Solution>
