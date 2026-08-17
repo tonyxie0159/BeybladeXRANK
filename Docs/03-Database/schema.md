@@ -36,12 +36,17 @@ Unique constraint：
 - PlayerAScore
 - PlayerBScore
 - WinningPlayerId nullable
+- ForfeitedPlayerId nullable
+- BSidePlayerId nullable
+- XSidePlayerId nullable
 - CreatedAtUtc
 - StartedAtUtc nullable
 - CompletedAtUtc nullable
 - Version / concurrency token（如實作需要）
 
 PlayerAId != PlayerBId。
+
+`Forfeited` 時 WinningPlayerId 與 ForfeitedPlayerId 必須是本場不同玩家。B Side 與 X Side 必須分別對應本場兩名玩家。
 
 ## BattleLineup
 
@@ -130,4 +135,3 @@ BattleResult：
 ## 不建立 Statistics Table
 
 玩家、陀螺、對手戰績全部從 Battle / BattleRound / BattleRoundEvent 聚合。
-

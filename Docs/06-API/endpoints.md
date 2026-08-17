@@ -19,18 +19,26 @@
 
 ## BattleService
 
-- CreateDraft(creatorId, opponentId)
-- SetLineup(battleId, playerASelection, playerBSelection)
-- LockLineup(battleId)
-- StartBattle(battleId)
+- CreateInvitation(creatorId, opponentId)
+- AcceptInvitation(invitationId, opponentId)
+- RejectInvitation(invitationId, opponentId)
+- WithdrawInvitation(invitationId, creatorId)
+- SubmitOwnLineup(battleId, playerId, orderedBladeIds)
+- ConfirmLineup(battleId, playerId)
+- RequestLineupEdit(battleId, playerId)
+- RespondToLineupEdit(battleId, playerId, accept)
+- AssignSides(battleId, refereeId, bSidePlayerId, xSidePlayerId)
+- StartBattle(battleId, refereeId)
 - RecordLaunchFault(battleId, roundId, playerId)
 - RecordBattleResult(battleId, roundId, winnerPlayerId, resultType)
 - CompleteRound(battleId, roundId)
-- CreateReorderedLineup(battleId, orderedBladeIdsA, orderedBladeIdsB)
+- SubmitOwnReorderedLineup(battleId, playerId, orderedBladeIds)
 - GetBattleState(battleId)
 - GetBattleHistory(battleId)
 - ReviseRound(battleId, roundId, revisedResult, reason)
 - FinishBattle(battleId)
+- ForfeitBattle(battleId, refereeId, forfeitedPlayerId)
+- CancelBattle(battleId, refereeId)
 
 ## StatisticsService
 
@@ -52,4 +60,3 @@
 - Beyblade 是否屬於正確 Player。
 
 不要信任 hidden field、query string 或 client score。
-
