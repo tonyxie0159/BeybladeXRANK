@@ -14,7 +14,7 @@ VictoryPendingCompletion
 Completed
 ```
 
-Cancelled 若需求沒有提出，第一版不需要。
+被拒絕或由發起人撤回的未接受邀請直接硬刪除，不建立 Battle、Rejected 或 Cancelled 狀態。進行中的 Battle 若由裁判取消，也硬刪除整個 aggregate，不保留 Cancelled 狀態。
 
 ## 狀態規則
 
@@ -64,6 +64,14 @@ Cancelled 若需求沒有提出，第一版不需要。
 不可進行一般新增事件。
 
 若產品流程允許修改已完成 Battle，必須經明確的「修改判決」流程，並重新驗證整場結果；第一版不提供任意編輯。
+
+### Forfeited
+
+裁判指定棄權者，另一方成為 `WinningPlayerId`，不要求勝者達到 4 分。棄權前已完成的 Round 保留並計入戰績；棄權當下尚未完成 Round 的所有事件均不計入戰績。Forfeited 是唯讀終止狀態。
+
+### 取消（不是狀態）
+
+裁判經二次確認後，以單一資料庫交易硬刪除 Battle、Lineup、Round、Event 與 Revision。任何刪除失敗時整筆交易回滾；成功後該場內容不得進入任何戰績聚合。
 
 ## Round 完成
 
@@ -120,4 +128,3 @@ VictoryPendingCompletion -> InProgress
 - 順序可以改
 - 分數不歸零
 - RoundNo 繼續遞增
-
