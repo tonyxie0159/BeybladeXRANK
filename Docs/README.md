@@ -2,6 +2,19 @@
 
 本文件集是 BeybladeRecordSystem 的唯一開發規格來源，供 AI Coding Agent 依序實作。
 
+## 版本與同步原則
+
+GitHub repository 是專案程式碼與本目錄文件的共享版本來源。Codex 工作環境中的 Git checkout 是獨立的本地工作副本，不會因為綁定 GitHub 帳號而自動把 commit 同步回 GitHub。
+
+為確保不同裝置或新的 Codex 工作環境取得相同版本，每次變更必須：
+
+1. 在目前分支完成並檢查變更。
+2. 建立 Git commit。
+3. 將分支推送至 GitHub，並建立 Pull Request。
+4. Pull Request 合併至 GitHub 的預設分支後，才視為其他環境都能取得的正式版本。
+
+只有本地 commit、尚未推送的分支或對話內容都不是跨裝置的共享來源。開始新工作前應從 GitHub 預設分支建立最新 checkout，避免以舊副本繼續開發。
+
 ## 核心目標
 
 在兩天內完成一個手機／平板優先的戰鬥陀螺 1v1 戰績工具。

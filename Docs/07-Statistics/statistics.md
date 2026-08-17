@@ -17,6 +17,10 @@
 
 沒有比賽時避免除以零。
 
+只聚合有效完成或以棄權結束的 Battle。被拒絕或撤回的邀請，以及由裁判取消並硬刪除的 Battle，不得影響任何統計。
+
+Forfeited Battle 依 `WinningPlayerId` 計算玩家勝敗。棄權前已完成的 Round 依有效事件計算玩家與陀螺戰績；棄權當下尚未完成 Round 的所有事件全部排除。
+
 ## 陀螺戰績
 
 每顆陀螺：
@@ -68,4 +72,3 @@ LaunchFaultPenalty 是分數事件，不應單獨把整個 Round 判為敗場。
 - WinRate DESC/ASC
 
 所有排序由 Server / LINQ / SQL 執行，不在前端一次載入全部資料後排序。
-
