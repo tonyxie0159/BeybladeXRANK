@@ -5,7 +5,7 @@
 **/.tools/
 
 # Local runtime data: never publish player records, SQLite files, or authentication keys
-**/data/
+/BeybladeXRANK-main/data/
 *.db
 *.db-shm
 *.db-wal
