@@ -9,8 +9,12 @@ public class BattleRound
     public int LineupId { get; set; }
     public int RoundNo { get; set; }
     public int PositionNo { get; set; }
+    public int? PlayerAId { get; set; }
+    public string PlayerADisplayNameSnapshot { get; set; } = string.Empty;
     public int PlayerABeybladeId { get; set; }
     public string PlayerABeybladeNameSnapshot { get; set; } = string.Empty;
+    public int? PlayerBId { get; set; }
+    public string PlayerBDisplayNameSnapshot { get; set; } = string.Empty;
     public int PlayerBBeybladeId { get; set; }
     public string PlayerBBeybladeNameSnapshot { get; set; } = string.Empty;
     public BattleRoundStatus Status { get; set; } = BattleRoundStatus.InProgress;
@@ -18,6 +22,8 @@ public class BattleRound
     public DateTime? CompletedAtUtc { get; set; }
     public Battle Battle { get; set; } = null!;
     public BattleLineup Lineup { get; set; } = null!;
+    public User? PlayerA { get; set; }
+    public User? PlayerB { get; set; }
     public ICollection<BattleRoundEvent> Events { get; set; } = new List<BattleRoundEvent>();
     public ICollection<BattleRoundRevision> Revisions { get; set; } = new List<BattleRoundRevision>();
 }

@@ -14,10 +14,12 @@ public static class BattleRules
         _ => throw new ArgumentOutOfRangeException(nameof(resultType))
     };
 
-    public static BattleStatus StatusForScore(int playerAScore, int playerBScore) =>
-        playerAScore >= 4 || playerBScore >= 4
+    public static BattleStatus StatusForScore(int sideAScore, int sideBScore, int scoreToWin = 4) =>
+        sideAScore >= scoreToWin || sideBScore >= scoreToWin
             ? BattleStatus.VictoryPendingCompletion
             : BattleStatus.InProgress;
+
+    public static BattleSide Opposite(BattleSide side) => side == BattleSide.B ? BattleSide.X : BattleSide.B;
 
     public static int FaultCount(IEnumerable<BattleRoundEvent> events, int actorPlayerId)
     {

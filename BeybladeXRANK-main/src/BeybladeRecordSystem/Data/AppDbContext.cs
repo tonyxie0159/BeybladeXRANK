@@ -9,9 +9,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Beyblade> Beyblades => Set<Beyblade>();
     public DbSet<Battle> Battles => Set<Battle>();
     public DbSet<BattleLineup> BattleLineups => Set<BattleLineup>();
+    public DbSet<BattleLineupSelection> BattleLineupSelections => Set<BattleLineupSelection>();
+    public DbSet<BattleTeamOrderSelection> BattleTeamOrderSelections => Set<BattleTeamOrderSelection>();
     public DbSet<BattleRound> BattleRounds => Set<BattleRound>();
     public DbSet<BattleRoundEvent> BattleRoundEvents => Set<BattleRoundEvent>();
     public DbSet<BattleRoundRevision> BattleRoundRevisions => Set<BattleRoundRevision>();
+    public DbSet<Tournament> Tournaments => Set<Tournament>();
+    public DbSet<TournamentEntry> TournamentEntries => Set<TournamentEntry>();
+    public DbSet<TournamentEntryMember> TournamentEntryMembers => Set<TournamentEntryMember>();
+    public DbSet<TournamentInvitation> TournamentInvitations => Set<TournamentInvitation>();
+    public DbSet<TournamentMatch> TournamentMatches => Set<TournamentMatch>();
+    public DbSet<TournamentMatchParticipant> TournamentMatchParticipants => Set<TournamentMatchParticipant>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,26 +40,72 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Battle>(entity =>
         {
-            entity.ToTable(t => t.HasCheckConstraint("CK_Battle_DifferentPlayers", "PlayerAId <> PlayerBId"));
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Battle_DifferentPlayers", "PlayerAId IS NULL OR PlayerBId IS NULL OR PlayerAId <> PlayerBId");
+                t.HasCheckConstraint("CK_Battle_ScoreToWin", "ScoreToWin > 0");
+                t.HasCheckConstraint("CK_Battle_Scores", "SideAScore >= 0 AND SideBScore >= 0");
+                t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND TournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND TournamentMatchId IS NOT NULL)");
+            });
             entity.Property(x => x.Version).IsConcurrencyToken();
             entity.HasOne(x => x.PlayerA).WithMany().HasForeignKey(x => x.PlayerAId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.PlayerB).WithMany().HasForeignKey(x => x.PlayerBId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.CreatedByUser).WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.TournamentMatch).WithOne(x => x.Battle).HasForeignKey<Battle>(x => x.TournamentMatchId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BattleLineup>(entity =>
         {
             entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.PositionNo }).IsUnique();
+            entity.Property(x => x.PlayerADisplayNameSnapshot).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PlayerBDisplayNameSnapshot).HasMaxLength(64).IsRequired();
             entity.HasOne(x => x.Battle).WithMany(x => x.Lineups).HasForeignKey(x => x.BattleId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.PlayerA).WithMany().HasForeignKey(x => x.PlayerAId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.PlayerABeyblade).WithMany().HasForeignKey(x => x.PlayerABeybladeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.PlayerB).WithMany().HasForeignKey(x => x.PlayerBId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.PlayerBBeyblade).WithMany().HasForeignKey(x => x.PlayerBBeybladeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BattleLineupSelection>(entity =>
+        {
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_BattleLineupSelection_PositionNo", "PositionNo > 0");
+                t.HasCheckConstraint("CK_BattleLineupSelection_SequenceNo", "SequenceNo > 0");
+            });
+            entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.UserId, x.PositionNo }).IsUnique();
+            entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.BeybladeId }).IsUnique();
+            entity.Property(x => x.PlayerDisplayNameSnapshot).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.BeybladeNameSnapshot).HasMaxLength(100).IsRequired();
+            entity.HasOne(x => x.Battle).WithMany(x => x.LineupSelections).HasForeignKey(x => x.BattleId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Beyblade).WithMany().HasForeignKey(x => x.BeybladeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BattleTeamOrderSelection>(entity =>
+        {
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_BattleTeamOrderSelection_PositionNo", "PositionNo > 0");
+                t.HasCheckConstraint("CK_BattleTeamOrderSelection_SequenceNo", "SequenceNo > 0");
+            });
+            entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.TournamentEntryId, x.PositionNo }).IsUnique();
+            entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.TournamentEntryId, x.UserId }).IsUnique();
+            entity.HasOne(x => x.Battle).WithMany(x => x.TeamOrderSelections).HasForeignKey(x => x.BattleId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TournamentEntry).WithMany().HasForeignKey(x => x.TournamentEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SubmittedByUser).WithMany().HasForeignKey(x => x.SubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BattleRound>(entity =>
         {
             entity.HasIndex(x => new { x.BattleId, x.RoundNo }).IsUnique();
+            entity.Property(x => x.PlayerADisplayNameSnapshot).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PlayerBDisplayNameSnapshot).HasMaxLength(64).IsRequired();
             entity.HasOne(x => x.Battle).WithMany(x => x.Rounds).HasForeignKey(x => x.BattleId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.Lineup).WithMany().HasForeignKey(x => x.LineupId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.PlayerA).WithMany().HasForeignKey(x => x.PlayerAId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.PlayerB).WithMany().HasForeignKey(x => x.PlayerBId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BattleRoundEvent>(entity =>
@@ -64,6 +118,92 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.HasOne(x => x.BattleRound).WithMany(x => x.Revisions).HasForeignKey(x => x.BattleRoundId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.ChangedByUser).WithMany().HasForeignKey(x => x.ChangedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Tournament>(entity =>
+        {
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Tournament_TargetEntryCount", "TargetEntryCount BETWEEN 2 AND 512");
+                t.HasCheckConstraint("CK_Tournament_ScoreToWin", "ScoreToWin > 0");
+                t.HasCheckConstraint("CK_Tournament_BeybladesPerPlayer", "BeybladesPerPlayer > 0");
+                t.HasCheckConstraint("CK_Tournament_TeamSize", "(Mode = 0 AND TeamSize IS NULL) OR (Mode = 1 AND TeamSize IN (2, 3))");
+            });
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.RulesSnapshot).IsRequired();
+            entity.Property(x => x.CancellationReason).HasMaxLength(500);
+            entity.Property(x => x.Version).IsConcurrencyToken();
+            entity.HasIndex(x => new { x.Status, x.UpdatedAtUtc });
+            entity.HasIndex(x => new { x.OrganizerUserId, x.UpdatedAtUtc });
+            entity.HasOne(x => x.OrganizerUser).WithMany().HasForeignKey(x => x.OrganizerUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TournamentEntry>(entity =>
+        {
+            entity.Property(x => x.RegistrationNumber).HasMaxLength(32);
+            entity.Property(x => x.DisplayNameSnapshot).HasMaxLength(192).IsRequired();
+            entity.Property(x => x.TeamName).HasMaxLength(100);
+            entity.HasIndex(x => new { x.TournamentId, x.RegistrationNumber }).IsUnique();
+            entity.HasIndex(x => new { x.TournamentId, x.SchedulePosition }).IsUnique();
+            entity.HasIndex(x => new { x.TournamentId, x.IndividualUserId }).IsUnique();
+            entity.HasOne(x => x.Tournament).WithMany(x => x.Entries).HasForeignKey(x => x.TournamentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.IndividualUser).WithMany().HasForeignKey(x => x.IndividualUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TournamentEntryMember>(entity =>
+        {
+            entity.ToTable(t => t.HasCheckConstraint("CK_TournamentEntryMember_MemberOrder", "MemberOrder > 0"));
+            entity.Property(x => x.DisplayNameSnapshot).HasMaxLength(64).IsRequired();
+            entity.HasIndex(x => new { x.TournamentId, x.UserId }).IsUnique();
+            entity.HasIndex(x => new { x.TournamentEntryId, x.MemberOrder }).IsUnique();
+            entity.HasOne(x => x.Tournament).WithMany().HasForeignKey(x => x.TournamentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TournamentEntry).WithMany(x => x.Members).HasForeignKey(x => x.TournamentEntryId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TournamentInvitation>(entity =>
+        {
+            entity.HasIndex(x => new { x.InvitedUserId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TournamentId, x.Status });
+            entity.HasOne(x => x.Tournament).WithMany(x => x.Invitations).HasForeignKey(x => x.TournamentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TournamentEntry).WithMany().HasForeignKey(x => x.TournamentEntryId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.InvitedUser).WithMany().HasForeignKey(x => x.InvitedUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.InvitedByUser).WithMany().HasForeignKey(x => x.InvitedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TournamentMatch>(entity =>
+        {
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_TournamentMatch_RoundNumber", "RoundNumber > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_MatchNumber", "MatchNumber > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_SequenceNumber", "SequenceNumber > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_SideAReference", "SideASourceReferenceId > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_ByeSide", "IsBye = 0 OR SideBSourceReferenceId IS NULL");
+            });
+            entity.Property(x => x.ResolutionReason).HasMaxLength(500);
+            entity.Property(x => x.Version).IsConcurrencyToken();
+            entity.HasIndex(x => new { x.TournamentId, x.SequenceNumber }).IsUnique();
+            entity.HasIndex(x => new { x.TournamentId, x.Bracket, x.RoundNumber, x.MatchNumber }).IsUnique();
+            entity.HasIndex(x => new { x.TournamentId, x.Status });
+            entity.HasOne(x => x.Tournament).WithMany(x => x.Matches).HasForeignKey(x => x.TournamentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.SideAEntry).WithMany().HasForeignKey(x => x.SideAEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SideBEntry).WithMany().HasForeignKey(x => x.SideBEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.WinnerEntry).WithMany().HasForeignKey(x => x.WinnerEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.LoserEntry).WithMany().HasForeignKey(x => x.LoserEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.WinnerToMatch).WithMany().HasForeignKey(x => x.WinnerToMatchId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.LoserToMatch).WithMany().HasForeignKey(x => x.LoserToMatchId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TournamentMatchParticipant>(entity =>
+        {
+            entity.HasIndex(x => new { x.TournamentMatchId, x.UserId }).IsUnique();
+            entity.HasIndex(x => new { x.TournamentMatchId, x.TournamentEntryId, x.UserId }).IsUnique();
+            entity.Property(x => x.Version).IsConcurrencyToken();
+            entity.HasOne(x => x.TournamentMatch).WithMany(x => x.Participants).HasForeignKey(x => x.TournamentMatchId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TournamentEntry).WithMany().HasForeignKey(x => x.TournamentEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
     }

@@ -25,6 +25,13 @@ public class BattleRulesTests
     public void StatusForScore_RequiresFourPoints(int aScore, int bScore, BattleStatus expected) =>
         Assert.Equal(expected, BattleRules.StatusForScore(aScore, bScore));
 
+    [Theory]
+    [InlineData(5, 4, 6, BattleStatus.InProgress)]
+    [InlineData(6, 4, 6, BattleStatus.VictoryPendingCompletion)]
+    [InlineData(7, 8, 8, BattleStatus.VictoryPendingCompletion)]
+    public void StatusForScore_UsesBattleSpecificThreshold(int aScore, int bScore, int scoreToWin, BattleStatus expected) =>
+        Assert.Equal(expected, BattleRules.StatusForScore(aScore, bScore, scoreToWin));
+
     [Fact]
     public void FaultCount_SecondPenaltyResetsOnlyFaultyBladeCounter()
     {
@@ -112,6 +119,50 @@ public class BattleRulesTests
         var completed = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
         Assert.Equal(BattleStatus.Completed, completed.Status);
         Assert.Equal(setup.PlayerAId, completed.WinningPlayerId);
+        Assert.Equal(BattleSide.B, completed.WinningSide);
+    }
+
+    [Fact]
+    public async Task QuickBattle_KeepsLegacyRulesAndStoresActualPlayersInLineupAndRound()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+
+        var battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
+        var lineup = await setup.Db.BattleLineups
+            .Where(x => x.BattleId == setup.BattleId)
+            .OrderBy(x => x.PositionNo)
+            .ToListAsync();
+        var round = await setup.Db.BattleRounds.SingleAsync(x => x.Id == setup.CurrentRoundId);
+
+        Assert.Equal(BattleSourceType.Quick, battle.SourceType);
+        Assert.Equal(4, battle.ScoreToWin);
+        Assert.Equal(BattleSide.B, battle.SideADesignation);
+        Assert.Null(battle.TournamentMatchId);
+        Assert.All(lineup, item =>
+        {
+            Assert.Equal(setup.PlayerAId, item.PlayerAId);
+            Assert.Equal("A", item.PlayerADisplayNameSnapshot);
+            Assert.Equal(setup.PlayerBId, item.PlayerBId);
+            Assert.Equal("B", item.PlayerBDisplayNameSnapshot);
+        });
+        Assert.Equal(setup.PlayerAId, round.PlayerAId);
+        Assert.Equal("A", round.PlayerADisplayNameSnapshot);
+        Assert.Equal(setup.PlayerBId, round.PlayerBId);
+        Assert.Equal("B", round.PlayerBDisplayNameSnapshot);
+    }
+
+    [Fact]
+    public async Task AssignSides_BeforeStart_UpdatesSideWithoutChangingParticipants()
+    {
+        await using var setup = await TestBattle.CreateAsync(startBattle: false);
+
+        var result = await setup.Service.AssignSidesAsync(setup.BattleId, setup.PlayerAId, BattleSide.X);
+
+        Assert.True(result.Succeeded);
+        var battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
+        Assert.Equal(BattleSide.X, battle.SideADesignation);
+        Assert.Equal(setup.PlayerAId, battle.PlayerAId);
+        Assert.Equal(setup.PlayerBId, battle.PlayerBId);
     }
 
     private sealed class TestBattle : IAsyncDisposable
@@ -133,7 +184,7 @@ public class BattleRulesTests
             Service = new BattleService(db);
         }
 
-        public static async Task<TestBattle> CreateAsync()
+        public static async Task<TestBattle> CreateAsync(bool startBattle = true)
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             await connection.OpenAsync();
@@ -151,10 +202,14 @@ public class BattleRulesTests
             var battle = (await service.CreateDraftAsync(a.Id, b.Id)).Value!;
             await service.SetLineupAsync(battle.Id, a.Id, blades.Take(3).Select(x => x.Id).ToList(), blades.Skip(3).Select(x => x.Id).ToList());
             await service.LockLineupAsync(battle.Id, a.Id);
-            var round = (await service.StartBattleAsync(battle.Id, a.Id)).Value!;
+            var roundId = 0;
+            if (startBattle)
+            {
+                roundId = (await service.StartBattleAsync(battle.Id, a.Id)).Value!.Id;
+            }
             return new TestBattle(connection, db)
             {
-                BattleId = battle.Id, CurrentRoundId = round.Id, PlayerAId = a.Id, PlayerBId = b.Id,
+                BattleId = battle.Id, CurrentRoundId = roundId, PlayerAId = a.Id, PlayerBId = b.Id,
                 PlayerABladeIds = blades.Take(3).Select(x => x.Id).ToList(), PlayerBBladeIds = blades.Skip(3).Select(x => x.Id).ToList()
             };
         }

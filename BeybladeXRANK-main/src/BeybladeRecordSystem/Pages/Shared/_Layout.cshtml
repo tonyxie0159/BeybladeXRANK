@@ -23,7 +23,7 @@
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-page="/Index">首頁</a>
                         </li>
-                        @if (User.Identity?.IsAuthenticated == true) { <li class="nav-item"><a class="nav-link text-dark" asp-page="/Battles/Create">開始對戰</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Beyblades/Index">我的陀螺</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Statistics/Index">我的戰績</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Settings">帳號設定</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Logout">登出</a></li> } else { <li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Login">登入</a></li> }
+                        @if (User.Identity?.IsAuthenticated == true) { <li class="nav-item"><a class="nav-link text-dark" asp-page="/Tournaments/Index">比賽房間</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Battles/Create">開始對戰</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Beyblades/Index">我的陀螺</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Statistics/Index">我的戰績</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Settings">帳號設定</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Logout">登出</a></li> } else { <li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Login">登入</a></li> }
                     </ul>
                 </div>
             </div>

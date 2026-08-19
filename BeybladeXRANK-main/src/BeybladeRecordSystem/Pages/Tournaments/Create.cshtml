@@ -1,0 +1,17 @@
+@page
+@model BeybladeRecordSystem.Pages.Tournaments.CreateModel
+@using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Domain.Tournaments
+@{ ViewData["Title"] = "建立比賽"; }
+<h1>建立比賽</h1>
+<p class="text-muted">規則會保存為 Snapshot，建立後不會因系統文字更新而改變。</p>
+<form method="post" class="card card-body">
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+    <div class="mb-3"><label asp-for="Name" class="form-label">比賽名稱</label><input asp-for="Name" class="form-control" /><span asp-validation-for="Name" class="text-danger"></span></div>
+    <div class="mb-3"><label asp-for="RuleSet" class="form-label">比賽模式與規則</label><select asp-for="RuleSet" class="form-select">@foreach (var rule in Model.Rules) { <option value="@rule.RuleSet">@rule.DisplayName</option> }</select></div>
+    <div class="mb-3"><label asp-for="RegistrationMode" class="form-label">報名方式</label><select asp-for="RegistrationMode" class="form-select"><option value="@TournamentRegistrationMode.Individual">個人報名（僅單人賽）</option><option value="@TournamentRegistrationMode.CompleteTeam">整隊報名</option><option value="@TournamentRegistrationMode.SystemAssignedTeam">個人報名後系統配隊</option></select></div>
+    <div class="mb-3"><label asp-for="Format" class="form-label">賽制</label><select asp-for="Format" asp-items="Html.GetEnumSelectList<TournamentFormat>()" class="form-select"></select></div>
+    <div class="mb-3"><label asp-for="TargetEntryCount" class="form-label">目標參賽人數／隊伍數</label><input asp-for="TargetEntryCount" class="form-control" /><span asp-validation-for="TargetEntryCount" class="text-danger"></span><div class="form-text">單循環最多 32、雙敗最多 256，其餘最多 512。</div></div>
+    <div class="mb-3"><label asp-for="Notes" class="form-label">主辦方備註（選填）</label><textarea asp-for="Notes" class="form-control" rows="4"></textarea><span asp-validation-for="Notes" class="text-danger"></span></div>
+    <button class="btn btn-primary btn-lg">確認建立</button>
+</form>

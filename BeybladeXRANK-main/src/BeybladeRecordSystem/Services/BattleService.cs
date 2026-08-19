@@ -17,8 +17,11 @@ public class BattleService(AppDbContext db)
 
         var battle = new Battle
         {
+            SourceType = BattleSourceType.Quick,
+            ScoreToWin = 4,
             PlayerAId = creatorId,
             PlayerBId = opponentId,
+            SideADesignation = BattleSide.B,
             CreatedByUserId = creatorId,
             Status = BattleStatus.Draft,
             CreatedAtUtc = DateTime.UtcNow,
@@ -31,7 +34,7 @@ public class BattleService(AppDbContext db)
 
     public async Task<ServiceResult> SetLineupAsync(int battleId, int creatorId, IReadOnlyList<int> playerASelection, IReadOnlyList<int> playerBSelection)
     {
-        var battle = await db.Battles.Include(x => x.Lineups).SingleOrDefaultAsync(x => x.Id == battleId);
+        var battle = await db.Battles.Include(x => x.PlayerA).Include(x => x.PlayerB).Include(x => x.Lineups).SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult.Failure("找不到對戰。");
         if (battle.CreatedByUserId != creatorId) return ServiceResult.Failure("只有建立者可設定陣容。");
         if (battle.Status != BattleStatus.Draft) return ServiceResult.Failure("陣容已鎖定，不能更換陀螺。");
@@ -52,8 +55,12 @@ public class BattleService(AppDbContext db)
                 BattleId = battle.Id,
                 SequenceNo = 1,
                 PositionNo = index + 1,
+                PlayerAId = battle.PlayerAId,
+                PlayerADisplayNameSnapshot = battle.PlayerA!.DisplayName,
                 PlayerABeybladeId = a.Id,
                 PlayerABeybladeNameSnapshot = a.Name,
+                PlayerBId = battle.PlayerBId,
+                PlayerBDisplayNameSnapshot = battle.PlayerB!.DisplayName,
                 PlayerBBeybladeId = b.Id,
                 PlayerBBeybladeNameSnapshot = b.Name,
                 IsCurrent = true
@@ -74,6 +81,19 @@ public class BattleService(AppDbContext db)
         if (lineup.Count != 3 || lineup.Select(x => x.PlayerABeybladeId).Distinct().Count() != 3 || lineup.Select(x => x.PlayerBBeybladeId).Distinct().Count() != 3)
             return ServiceResult.Failure("雙方各需三顆不同的陀螺才能鎖定。");
         battle.Status = BattleStatus.LineupLocked;
+        battle.Version = Guid.NewGuid().ToByteArray();
+        await db.SaveChangesAsync();
+        return ServiceResult.Success();
+    }
+
+    public async Task<ServiceResult> AssignSidesAsync(int battleId, int operatorUserId, BattleSide sideA)
+    {
+        var battle = await db.Battles.SingleOrDefaultAsync(x => x.Id == battleId);
+        if (battle is null) return ServiceResult.Failure("找不到對戰。");
+        if (battle.CreatedByUserId != operatorUserId) return ServiceResult.Failure("只有裁判可指定 B/X Side。");
+        if (battle.Status != BattleStatus.LineupLocked) return ServiceResult.Failure("只有陣容鎖定後、開始對戰前可以指定 Side。");
+
+        battle.SideADesignation = sideA;
         battle.Version = Guid.NewGuid().ToByteArray();
         await db.SaveChangesAsync();
         return ServiceResult.Success();
@@ -102,7 +122,7 @@ public class BattleService(AppDbContext db)
         var result = await GetOperationalRoundAsync(battleId, roundId, creatorId);
         if (!result.Succeeded) return ServiceResult.Failure(result.Error!);
         var (battle, round) = result.Value!;
-        if (actorPlayerId != battle.PlayerAId && actorPlayerId != battle.PlayerBId) return ServiceResult.Failure("失誤玩家不屬於這場對戰。");
+        if (actorPlayerId != round.PlayerAId && actorPlayerId != round.PlayerBId) return ServiceResult.Failure("失誤玩家不屬於目前順位。");
 
         var sequence = round.Events.Count + 1;
         round.Events.Add(new BattleRoundEvent { EventSequence = sequence, EventType = BattleRoundEventType.LaunchFault, ActorPlayerId = actorPlayerId, ScoreAwarded = 0, IsEffective = true, CreatedAtUtc = DateTime.UtcNow });
@@ -114,7 +134,7 @@ public class BattleService(AppDbContext db)
                 EventSequence = sequence + 1,
                 EventType = BattleRoundEventType.LaunchFaultPenalty,
                 ActorPlayerId = actorPlayerId,
-                WinnerPlayerId = actorPlayerId == battle.PlayerAId ? battle.PlayerBId : battle.PlayerAId,
+                WinnerPlayerId = actorPlayerId == round.PlayerAId ? round.PlayerBId : round.PlayerAId,
                 ScoreAwarded = 1,
                 IsEffective = true,
                 CreatedAtUtc = DateTime.UtcNow
@@ -132,7 +152,7 @@ public class BattleService(AppDbContext db)
         var result = await GetOperationalRoundAsync(battleId, roundId, creatorId);
         if (!result.Succeeded) return ServiceResult.Failure(result.Error!);
         var (battle, round) = result.Value!;
-        if (winnerPlayerId != battle.PlayerAId && winnerPlayerId != battle.PlayerBId) return ServiceResult.Failure("勝者不屬於這場對戰。");
+        if (winnerPlayerId != round.PlayerAId && winnerPlayerId != round.PlayerBId) return ServiceResult.Failure("勝者不屬於目前順位。");
         if (round.Events.Any(x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult)) return ServiceResult.Failure("此局已記錄勝負結果，請使用判決修改。");
 
         round.Events.Add(new BattleRoundEvent
@@ -170,6 +190,12 @@ public class BattleService(AppDbContext db)
                 nextRound = CreateRound(battle, nextLineup, battle.Rounds.Max(x => x.RoundNo) + 1);
                 db.BattleRounds.Add(nextRound);
             }
+            else if (battle.TournamentMatch is not null)
+            {
+                battle.TournamentMatch.Status = TournamentMatchStatus.ReorderSelection;
+                battle.TournamentMatch.UpdatedAtUtc = DateTime.UtcNow;
+                battle.TournamentMatch.Version = Guid.NewGuid().ToByteArray();
+            }
         }
         battle.Version = Guid.NewGuid().ToByteArray();
         await db.SaveChangesAsync();
@@ -178,15 +204,38 @@ public class BattleService(AppDbContext db)
 
     public async Task<ServiceResult> FinishBattleAsync(int battleId, int creatorId)
     {
-        var battle = await db.Battles.SingleOrDefaultAsync(x => x.Id == battleId);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var battle = await db.Battles.Include(x => x.TournamentMatch).Include(x => x.Rounds).ThenInclude(x => x.Events).SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult.Failure("找不到對戰。");
         if (battle.CreatedByUserId != creatorId) return ServiceResult.Failure("只有建立者可結束對戰。");
         if (battle.Status != BattleStatus.VictoryPendingCompletion) return ServiceResult.Failure("尚未達成勝利條件，不能結束對戰。");
-        battle.WinningPlayerId = battle.PlayerAScore >= 4 ? battle.PlayerAId : battle.PlayerBId;
+        var sideAWon = battle.SideAScore >= battle.ScoreToWin;
+        battle.WinningPlayerId = battle.SourceType == BattleSourceType.TournamentTeam
+            ? null
+            : sideAWon ? battle.PlayerAId : battle.PlayerBId;
+        battle.WinningSide = sideAWon
+            ? battle.SideADesignation
+            : battle.SideADesignation is null ? null : BattleRules.Opposite(battle.SideADesignation.Value);
+        var now = DateTime.UtcNow;
+        foreach (var round in battle.Rounds.Where(x => x.Status == BattleRoundStatus.InProgress && x.Events.Any(e => e.IsEffective && e.ScoreAwarded > 0)))
+        {
+            round.Status = BattleRoundStatus.Completed;
+            round.CompletedAtUtc = now;
+        }
         battle.Status = BattleStatus.Completed;
-        battle.CompletedAtUtc = DateTime.UtcNow;
+        battle.CompletedAtUtc = now;
         battle.Version = Guid.NewGuid().ToByteArray();
+        if (battle.TournamentMatch is not null)
+        {
+            var winnerEntryId = sideAWon ? battle.TournamentMatch.SideAEntryId : battle.TournamentMatch.SideBEntryId;
+            var loserEntryId = sideAWon ? battle.TournamentMatch.SideBEntryId : battle.TournamentMatch.SideAEntryId;
+            if (winnerEntryId is null || loserEntryId is null) return ServiceResult.Failure("Tournament Match 缺少已解析的參賽單位。");
+            await new TournamentProgressionService(db).CompleteMatchAndAdvanceAsync(
+                battle.TournamentMatch, winnerEntryId.Value, loserEntryId.Value,
+                TournamentMatchStatus.Completed, "BattleCompleted", now);
+        }
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return ServiceResult.Success();
     }
 
@@ -217,7 +266,11 @@ public class BattleService(AppDbContext db)
             newLineup.Add(new BattleLineup
             {
                 BattleId = battle.Id, SequenceNo = sequenceNo, PositionNo = index + 1, IsCurrent = true,
+                PlayerAId = initial.Single(x => x.PlayerABeybladeId == orderedBladeIdsA[index]).PlayerAId,
+                PlayerADisplayNameSnapshot = initial.Single(x => x.PlayerABeybladeId == orderedBladeIdsA[index]).PlayerADisplayNameSnapshot,
                 PlayerABeybladeId = orderedBladeIdsA[index], PlayerABeybladeNameSnapshot = aSnapshots[orderedBladeIdsA[index]],
+                PlayerBId = initial.Single(x => x.PlayerBBeybladeId == orderedBladeIdsB[index]).PlayerBId,
+                PlayerBDisplayNameSnapshot = initial.Single(x => x.PlayerBBeybladeId == orderedBladeIdsB[index]).PlayerBDisplayNameSnapshot,
                 PlayerBBeybladeId = orderedBladeIdsB[index], PlayerBBeybladeNameSnapshot = bSnapshots[orderedBladeIdsB[index]]
             });
         }
@@ -233,13 +286,13 @@ public class BattleService(AppDbContext db)
     public async Task<ServiceResult> ReviseRoundAsync(int battleId, int roundId, int creatorId, int winnerPlayerId, ResultType resultType, string? reason)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var battle = await db.Battles.Include(x => x.Rounds).ThenInclude(x => x.Events).SingleOrDefaultAsync(x => x.Id == battleId);
+        var battle = await db.Battles.Include(x => x.TournamentMatch).Include(x => x.Rounds).ThenInclude(x => x.Events).SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult.Failure("找不到對戰。");
         if (battle.CreatedByUserId != creatorId) return ServiceResult.Failure("只有建立者可修改判決。");
         if (battle.Status is not (BattleStatus.InProgress or BattleStatus.VictoryPendingCompletion)) return ServiceResult.Failure("目前狀態不能修改判決。");
-        if (winnerPlayerId != battle.PlayerAId && winnerPlayerId != battle.PlayerBId) return ServiceResult.Failure("勝者不屬於這場對戰。");
         var round = battle.Rounds.SingleOrDefault(x => x.Id == roundId);
         if (round is null) return ServiceResult.Failure("找不到指定的 Round。");
+        if (winnerPlayerId != round.PlayerAId && winnerPlayerId != round.PlayerBId) return ServiceResult.Failure("勝者不屬於指定順位。");
 
         var previous = round.Events.Where(x => x.IsEffective).OrderBy(x => x.EventSequence).Select(EventSnapshot.From).ToList();
         foreach (var eventToReplace in round.Events.Where(x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult)) eventToReplace.IsEffective = false;
@@ -264,7 +317,10 @@ public class BattleService(AppDbContext db)
     public async Task<ServiceResult<Battle>> GetBattleAsync(int battleId, int userId)
     {
         var battle = await db.Battles.Include(x => x.PlayerA).Include(x => x.PlayerB).Include(x => x.Lineups).Include(x => x.Rounds).ThenInclude(x => x.Events)
-            .SingleOrDefaultAsync(x => x.Id == battleId && (x.PlayerAId == userId || x.PlayerBId == userId));
+            .Include(x => x.TournamentMatch).ThenInclude(x => x!.SideAEntry)
+            .Include(x => x.TournamentMatch).ThenInclude(x => x!.SideBEntry)
+            .SingleOrDefaultAsync(x => x.Id == battleId && (x.CreatedByUserId == userId || x.PlayerAId == userId || x.PlayerBId == userId ||
+                (x.TournamentMatch != null && x.TournamentMatch.Participants.Any(p => p.UserId == userId))));
         return battle is null ? ServiceResult<Battle>.Failure("找不到對戰。") : ServiceResult<Battle>.Success(battle);
     }
 
@@ -273,14 +329,16 @@ public class BattleService(AppDbContext db)
     private static BattleRound CreateRound(Battle battle, BattleLineup lineup, int roundNo) => new()
     {
         BattleId = battle.Id, LineupId = lineup.Id, RoundNo = roundNo, PositionNo = lineup.PositionNo,
+        PlayerAId = lineup.PlayerAId, PlayerADisplayNameSnapshot = lineup.PlayerADisplayNameSnapshot,
         PlayerABeybladeId = lineup.PlayerABeybladeId, PlayerABeybladeNameSnapshot = lineup.PlayerABeybladeNameSnapshot,
+        PlayerBId = lineup.PlayerBId, PlayerBDisplayNameSnapshot = lineup.PlayerBDisplayNameSnapshot,
         PlayerBBeybladeId = lineup.PlayerBBeybladeId, PlayerBBeybladeNameSnapshot = lineup.PlayerBBeybladeNameSnapshot,
         CreatedAtUtc = DateTime.UtcNow
     };
 
     private async Task<ServiceResult<(Battle Battle, BattleRound Round)>> GetOperationalRoundAsync(int battleId, int roundId, int creatorId)
     {
-        var battle = await db.Battles.Include(x => x.Lineups).Include(x => x.Rounds).ThenInclude(x => x.Events).SingleOrDefaultAsync(x => x.Id == battleId);
+        var battle = await db.Battles.Include(x => x.TournamentMatch).Include(x => x.Lineups).Include(x => x.Rounds).ThenInclude(x => x.Events).SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult<(Battle, BattleRound)>.Failure("找不到對戰。");
         if (battle.CreatedByUserId != creatorId) return ServiceResult<(Battle, BattleRound)>.Failure("只有建立者可記錄對戰事件。");
         if (battle.Status != BattleStatus.InProgress) return ServiceResult<(Battle, BattleRound)>.Failure("目前對戰狀態不能新增事件。");
@@ -291,10 +349,21 @@ public class BattleService(AppDbContext db)
 
     private async Task RecalculateBattleAsync(Battle battle)
     {
-        var events = battle.Rounds.SelectMany(x => x.Events).Where(x => x.IsEffective).ToList();
-        battle.PlayerAScore = events.Where(x => x.WinnerPlayerId == battle.PlayerAId).Sum(x => x.ScoreAwarded);
-        battle.PlayerBScore = events.Where(x => x.WinnerPlayerId == battle.PlayerBId).Sum(x => x.ScoreAwarded);
-        battle.Status = BattleRules.StatusForScore(battle.PlayerAScore, battle.PlayerBScore);
+        battle.SideAScore = battle.Rounds.Sum(round => round.Events
+            .Where(x => x.IsEffective && x.WinnerPlayerId == round.PlayerAId)
+            .Sum(x => x.ScoreAwarded));
+        battle.SideBScore = battle.Rounds.Sum(round => round.Events
+            .Where(x => x.IsEffective && x.WinnerPlayerId == round.PlayerBId)
+            .Sum(x => x.ScoreAwarded));
+        battle.Status = BattleRules.StatusForScore(battle.SideAScore, battle.SideBScore, battle.ScoreToWin);
+        if (battle.TournamentMatch is not null)
+        {
+            battle.TournamentMatch.Status = battle.Status == BattleStatus.VictoryPendingCompletion
+                ? TournamentMatchStatus.VictoryPendingCompletion
+                : TournamentMatchStatus.InProgress;
+            battle.TournamentMatch.UpdatedAtUtc = DateTime.UtcNow;
+            battle.TournamentMatch.Version = Guid.NewGuid().ToByteArray();
+        }
         battle.Version = Guid.NewGuid().ToByteArray();
         await Task.CompletedTask;
     }

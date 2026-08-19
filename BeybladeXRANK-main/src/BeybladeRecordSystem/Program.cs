@@ -19,6 +19,9 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<BeybladeService>();
 builder.Services.AddScoped<BattleService>();
 builder.Services.AddScoped<StatisticsService>();
+builder.Services.AddScoped<TournamentService>();
+builder.Services.AddScoped<TournamentMatchService>();
+builder.Services.AddScoped<TournamentProgressionService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

@@ -1,0 +1,101 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Tournaments.MatchModel
+@using BeybladeRecordSystem.Domain.Enums
+@{ var match = Model.Workspace.Match; ViewData["Title"] = $"對局 #{match.SequenceNumber}"; }
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div><h1>對局 #@match.SequenceNumber</h1><p class="text-muted mb-0">@match.SideAEntry!.DisplayNameSnapshot vs @match.SideBEntry!.DisplayNameSnapshot</p></div>
+    <span class="badge text-bg-primary">@match.Status</span>
+</div>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+
+@if (match.Status == TournamentMatchStatus.AwaitingParticipationConfirmation)
+{
+    <section class="card card-body mb-3"><h2 class="h5">出賽確認</h2>
+    @if (Model.Workspace.CurrentParticipant?.Status == TournamentParticipationStatus.Pending)
+    {
+        <p>請確認是否參加本場對局。拒絕後本場會以不戰勝處理，無法撤回。</p>
+        <form method="post" asp-page-handler="Respond" class="d-inline"><input type="hidden" name="accept" value="true" /><button class="btn btn-success">確認出賽</button></form>
+        <form method="post" asp-page-handler="Respond" class="d-inline"><input type="hidden" name="accept" value="false" /><button class="btn btn-outline-danger" onclick="return confirm('確定拒絕出賽？')">拒絕出賽</button></form>
+    }
+    else { <p class="mb-0">等待另一位參賽者回覆。</p> }
+    </section>
+}
+@if (match.Status == TournamentMatchStatus.LineupSelection)
+{
+    <section class="card card-body mb-3"><h2 class="h5">私密提交陀螺</h2>
+    @if (Model.Workspace.VisibleSelections.Count == match.Tournament.BeybladesPerPlayer)
+    { <p class="mb-0">你的陣容已密封保存。對手完成提交前，雙方都看不到對方陣容。</p> }
+    else if (Model.Workspace.CurrentParticipant is not null)
+    {
+        <p>各位置不得重複。提交後不能更換，雙方所有必要資料完成前只會顯示自己的選擇。</p>
+        <form method="post" asp-page-handler="SubmitLineup">
+        @for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++)
+        { <label class="form-label">位置 @(i + 1)</label><select name="BladeIds" class="form-select mb-2" required><option value="">請選擇</option>@foreach (var blade in Model.Workspace.AvailableBeyblades) { <option value="@blade.Id">@blade.Name</option> }</select> }
+        <button class="btn btn-primary">密封提交陣容</button></form>
+    }
+    else { <p class="mb-0">等待雙方提交陣容。</p> }
+    </section>
+}
+@if (match.Tournament.Mode == TournamentMode.Team && match.Status is TournamentMatchStatus.LineupSelection or TournamentMatchStatus.TeamOrderSelection && Model.Workspace.CurrentParticipant is { IsMatchRepresentative: true } representative)
+{
+    var team = match.Participants.Where(x => x.TournamentEntryId == representative.TournamentEntryId).OrderBy(x => x.User.DisplayName).ToList();
+    <section class="card card-body mb-3"><h2 class="h5">本場代表人</h2><p>代表人只能排列隊員順序，不能替隊員選擇陀螺。</p>
+    <form method="post" asp-page-handler="AssignRepresentative" class="row g-2"><div class="col-md-8"><select asp-for="NewRepresentativeUserId" class="form-select">@foreach (var member in team) { <option value="@member.UserId">@member.User.DisplayName</option> }</select></div><div class="col-md-4"><button class="btn btn-outline-secondary w-100">轉交本場代表權</button></div></form></section>
+}
+@if (match.Status == TournamentMatchStatus.TeamOrderSelection)
+{
+    <section class="card card-body mb-3"><h2 class="h5">私密提交隊員出戰順序</h2>
+    @if (Model.Workspace.CurrentParticipant is { IsMatchRepresentative: true } teamRepresentative)
+    {
+        var team = match.Participants.Where(x => x.TournamentEntryId == teamRepresentative.TournamentEntryId).OrderBy(x => x.User.DisplayName).ToList();
+        @if (Model.Workspace.VisibleTeamOrder.Count == match.Tournament.TeamSize)
+        { <p class="mb-0">本隊順序已密封保存，等待另一隊完成。</p> }
+        else
+        { <form method="post" asp-page-handler="SubmitTeamOrder">@for (var i = 0; i < match.Tournament.TeamSize; i++) { <label class="form-label">第 @(i + 1) 出戰者</label><select name="OrderedUserIds" class="form-select mb-2" required><option value="">請選擇</option>@foreach (var member in team) { <option value="@member.UserId">@member.User.DisplayName</option> }</select> }<button class="btn btn-primary">密封提交隊員順序</button></form> }
+    }
+    else { <p class="mb-0">所有隊員已完成選螺，等待兩隊本場代表人提交順序。</p> }
+    </section>
+}
+@if (match.Status is TournamentMatchStatus.LineupReview or TournamentMatchStatus.LineupLocked or TournamentMatchStatus.SideSelection or TournamentMatchStatus.InProgress or TournamentMatchStatus.ReorderSelection or TournamentMatchStatus.VictoryPendingCompletion && match.Battle is not null)
+{
+    <section class="card card-body mb-3"><h2 class="h5">公開陣容</h2>
+    <div class="table-responsive"><table class="table"><thead><tr><th>順位</th><th>@match.SideAEntry!.DisplayNameSnapshot</th><th>@match.SideBEntry!.DisplayNameSnapshot</th></tr></thead><tbody>
+    @foreach (var row in match.Battle.Lineups.OrderBy(x => x.PositionNo)) { <tr><td>@row.PositionNo</td><td>@row.PlayerADisplayNameSnapshot／@row.PlayerABeybladeNameSnapshot</td><td>@row.PlayerBDisplayNameSnapshot／@row.PlayerBBeybladeNameSnapshot</td></tr> }
+    </tbody></table></div>
+    @if (match.Status == TournamentMatchStatus.LineupReview && Model.Workspace.CurrentParticipant is { LineupConfirmed: false })
+    { <form method="post" asp-page-handler="ConfirmLineup"><button class="btn btn-success">確認陣容正確</button></form> }
+    else if (match.Status == TournamentMatchStatus.LineupReview) { <p class="mb-0">等待另一位參賽者確認。</p> }
+    </section>
+}
+@if (match.Status == TournamentMatchStatus.ReorderSelection && match.Battle is not null)
+{
+    <section class="card card-body mb-3"><h2 class="h5">下一組私密重排</h2><p>比分保留，只能重新排列本場最初鎖定的陀螺；所有必要提交完成後直接開始下一組。</p>
+    @if (Model.Workspace.CurrentParticipant is not null)
+    {
+        var originals = match.Battle.LineupSelections.Where(x => x.SequenceNo == 1 && x.UserId == Model.Workspace.CurrentParticipant.UserId).OrderBy(x => x.PositionNo).ToList();
+        @if (Model.Workspace.CurrentPrivateSelections.Count == match.Tournament.BeybladesPerPlayer)
+        { <p class="text-success">你的陀螺順序已提交。</p> }
+        else
+        { <form method="post" asp-page-handler="SubmitReorder" class="mb-3">@for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++) { <label class="form-label">新順位 @(i + 1)</label><select name="BladeIds" class="form-select mb-2" required><option value="">請選擇</option>@foreach (var blade in originals) { <option value="@blade.BeybladeId">@blade.BeybladeNameSnapshot</option> }</select> }<button class="btn btn-primary">密封提交陀螺重排</button></form> }
+        @if (match.Tournament.Mode == TournamentMode.Team && Model.Workspace.CurrentParticipant.IsMatchRepresentative)
+        {
+            var team = match.Participants.Where(x => x.TournamentEntryId == Model.Workspace.CurrentParticipant.TournamentEntryId).OrderBy(x => x.User.DisplayName).ToList();
+            @if (Model.Workspace.CurrentPrivateTeamOrder.Count == match.Tournament.TeamSize)
+            { <p class="text-success">本隊隊員順序已提交。</p> }
+            else
+            { <form method="post" asp-page-handler="SubmitTeamReorder">@for (var i = 0; i < match.Tournament.TeamSize; i++) { <label class="form-label">第 @(i + 1) 出戰者</label><select name="OrderedUserIds" class="form-select mb-2" required><option value="">請選擇</option>@foreach (var member in team) { <option value="@member.UserId">@member.User.DisplayName</option> }</select> }<button class="btn btn-outline-primary">密封提交隊員重排</button></form> }
+        }
+    }
+    else { <p class="mb-0">等待雙方完成下一組重排。</p> }
+    </section>
+}
+@if (match.Status == TournamentMatchStatus.LineupLocked && Model.Workspace.IsOrganizer)
+{
+    <section class="card card-body mb-3"><h2 class="h5">裁判開賽</h2><form method="post" asp-page-handler="Start" class="row g-2">
+    <div class="col-md-8"><label asp-for="SideA" class="form-label">指定 @match.SideAEntry!.DisplayNameSnapshot 的 Side</label><select asp-for="SideA" asp-items="Html.GetEnumSelectList<BattleSide>()" class="form-select"></select></div>
+    <div class="col-md-4 d-flex align-items-end"><button class="btn btn-danger w-100">指定 Side 並開始第一局</button></div></form></section>
+}
+@if (match.Status is TournamentMatchStatus.InProgress or TournamentMatchStatus.VictoryPendingCompletion && match.Battle is not null)
+{ <a asp-page="/Battles/Battle" asp-route-id="@match.Battle.Id" class="btn btn-primary">回到進行中的對戰</a> }
+<a asp-page="Details" asp-route-id="@match.TournamentId" class="btn btn-link">返回賽事</a>

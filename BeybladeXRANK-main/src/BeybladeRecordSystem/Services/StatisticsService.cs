@@ -22,7 +22,7 @@ public class StatisticsService(AppDbContext db)
     public async Task<List<BeybladeStatisticsViewModel>> GetBeybladeStatisticsAsync(int userId, string? sort)
     {
         var completedRoundIds = db.BattleRounds.Where(x => x.Battle.Status == BattleStatus.Completed).Select(x => x.Id);
-        var rounds = await db.BattleRounds.Include(x => x.Events).Where(x => completedRoundIds.Contains(x.Id) && (x.Battle.PlayerAId == userId || x.Battle.PlayerBId == userId)).ToListAsync();
+        var rounds = await db.BattleRounds.Include(x => x.Events).Where(x => completedRoundIds.Contains(x.Id) && (x.PlayerAId == userId || x.PlayerBId == userId)).ToListAsync();
         var blades = await db.Beyblades.Where(x => x.UserId == userId).ToDictionaryAsync(x => x.Id, x => x.Name);
         var rows = blades.Select(pair =>
         {
@@ -45,14 +45,14 @@ public class StatisticsService(AppDbContext db)
             var wins = group.Count(x => x.WinningPlayerId == userId); var losses = group.Count() - wins;
             var score = group.Sum(x => x.PlayerAId == userId ? x.PlayerAScore : x.PlayerBScore);
             var against = group.Sum(x => x.PlayerAId == userId ? x.PlayerBScore : x.PlayerAScore);
-            return new OpponentStatisticsViewModel(group.Key.Id, group.Key.DisplayName, wins, losses, Rate(wins, losses), score, against);
+            return new OpponentStatisticsViewModel(group.Key!.Id, group.Key.DisplayName, wins, losses, Rate(wins, losses), score, against);
         }).OrderByDescending(x => x.WinRate).ThenBy(x => x.DisplayName).ToList();
     }
 
     public async Task<List<OpponentBeybladeStatisticsViewModel>> GetOpponentBeybladeStatisticsAsync(int userId, int opponentId)
     {
         var rounds = await db.BattleRounds.Include(x => x.Events).Include(x => x.Battle)
-            .Where(x => x.Battle.Status == BattleStatus.Completed &&
+            .Where(x => x.Battle.Status == BattleStatus.Completed && x.Battle.SourceType == BattleSourceType.Quick &&
                 ((x.Battle.PlayerAId == userId && x.Battle.PlayerBId == opponentId) || (x.Battle.PlayerBId == userId && x.Battle.PlayerAId == opponentId)))
             .ToListAsync();
         return rounds.GroupBy(round => round.Battle.PlayerAId == userId
@@ -71,10 +71,10 @@ public class StatisticsService(AppDbContext db)
     public async Task<List<BattleHistoryViewModel>> GetBattleHistoryAsync(int userId)
     {
         var battles = await CompletedBattles(userId).Include(x => x.PlayerA).Include(x => x.PlayerB).OrderByDescending(x => x.CompletedAtUtc).ToListAsync();
-        return battles.Select(x => new BattleHistoryViewModel(x.Id, (x.PlayerAId == userId ? x.PlayerB : x.PlayerA).DisplayName, x.PlayerAId == userId ? x.PlayerAScore : x.PlayerBScore, x.PlayerAId == userId ? x.PlayerBScore : x.PlayerAScore, x.WinningPlayerId == userId, x.CompletedAtUtc)).ToList();
+        return battles.Select(x => new BattleHistoryViewModel(x.Id, (x.PlayerAId == userId ? x.PlayerB : x.PlayerA)!.DisplayName, x.PlayerAId == userId ? x.PlayerAScore : x.PlayerBScore, x.PlayerAId == userId ? x.PlayerBScore : x.PlayerAScore, x.WinningPlayerId == userId, x.CompletedAtUtc)).ToList();
     }
 
-    private IQueryable<Domain.Entities.Battle> CompletedBattles(int userId) => db.Battles.Where(x => x.Status == BattleStatus.Completed && (x.PlayerAId == userId || x.PlayerBId == userId));
+    private IQueryable<Domain.Entities.Battle> CompletedBattles(int userId) => db.Battles.Where(x => x.Status == BattleStatus.Completed && x.SourceType == BattleSourceType.Quick && (x.PlayerAId == userId || x.PlayerBId == userId));
     private static decimal Rate(int wins, int losses) => wins + losses == 0 ? 0 : Math.Round((decimal)wins / (wins + losses), 3);
     private static IEnumerable<BeybladeStatisticsViewModel> Sort(IEnumerable<BeybladeStatisticsViewModel> source, string? sort) => sort switch
     {

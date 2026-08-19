@@ -14,7 +14,9 @@ public class BattleModel(BattleService battleService) : PageModel
     public Battle Battle { get; private set; } = null!;
     public BattleRound? CurrentRound => Battle.Rounds.OrderByDescending(x => x.RoundNo).FirstOrDefault(x => x.Status == BattleRoundStatus.InProgress);
     public bool CanOperate => Battle.CreatedByUserId == User.GetRequiredUserId();
-    public bool CanReorder => CanOperate && Battle.Status == BattleStatus.InProgress && CurrentRound is null && Battle.Lineups.Where(x => x.IsCurrent).Count() == 3;
+    public bool CanReorder => CanOperate && Battle.SourceType == BattleSourceType.Quick && Battle.Status == BattleStatus.InProgress && CurrentRound is null && Battle.Lineups.Where(x => x.IsCurrent).Count() == 3;
+    public string SideALabel => Battle.SourceType == BattleSourceType.TournamentTeam ? Battle.TournamentMatch!.SideAEntry!.DisplayNameSnapshot : Battle.PlayerA!.DisplayName;
+    public string SideBLabel => Battle.SourceType == BattleSourceType.TournamentTeam ? Battle.TournamentMatch!.SideBEntry!.DisplayNameSnapshot : Battle.PlayerB!.DisplayName;
 
     public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
     public async Task<IActionResult> OnPostFaultAsync(int id, int playerId)

@@ -1,0 +1,144 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Tournaments.DetailsModel
+@using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Infrastructure
+@{ ViewData["Title"] = Model.Tournament.Name; var registered = Model.Tournament.Entries.Count; }
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div><h1>@Model.Tournament.Name</h1><div class="text-muted">主辦：@Model.Tournament.OrganizerUser.DisplayName</div></div>
+    <div><span class="badge text-bg-primary">@Model.Tournament.Status</span> <span class="badge text-bg-secondary">@Model.Tournament.RegistrationStage</span></div>
+</div>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+<section class="card card-body mb-3">
+    <h2 class="h5">比賽規則</h2><p>@Model.Tournament.RulesSnapshot</p>
+    @if (!string.IsNullOrWhiteSpace(Model.Tournament.Notes)) { <h3 class="h6">主辦方備註</h3><p class="mb-0">@Model.Tournament.Notes</p> }
+</section>
+@if (Model.Tournament.Matches.Any())
+{
+    <section class="card card-body mb-3">
+        <h2 class="h5">賽程@(Model.Tournament.Status == TournamentStatus.RegistrationOpen ? "草稿" : null)</h2>
+        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>順序</th><th>組別／輪次</th><th>對戰來源</th><th>狀態</th></tr></thead><tbody>
+        @foreach (var match in Model.Tournament.Matches.OrderBy(x => x.SequenceNumber))
+        {
+            var sideA = match.SideAEntryId is int sideAId ? Model.Tournament.Entries.SingleOrDefault(x => x.Id == sideAId)?.DisplayNameSnapshot : $"{match.SideASourceKind} #{match.SideASourceReferenceId}";
+            var sideB = match.IsBye ? "Bye" : match.SideBEntryId is int sideBId ? Model.Tournament.Entries.SingleOrDefault(x => x.Id == sideBId)?.DisplayNameSnapshot : $"{match.SideBSourceKind} #{match.SideBSourceReferenceId}";
+            <tr><td>@match.SequenceNumber</td><td>@match.Bracket R@match.RoundNumber M@match.MatchNumber @if (match.IsSeedQualifier) { <span class="badge text-bg-warning">種子資格</span> } @if (match.IsResetFinal) { <span class="badge text-bg-danger">Reset Final</span> }</td><td>@sideA vs @sideB</td><td>@match.Status</td></tr>
+        }
+        </tbody></table></div>
+        @if (Model.IsOrganizer && Model.Tournament.Status == TournamentStatus.RegistrationOpen && Model.Tournament.RegistrationStage == TournamentRegistrationStage.ScheduleDraftCreated)
+        {
+            var positionedEntries = Model.Tournament.Entries.OrderBy(x => x.SchedulePosition).ToList();
+            <details class="mt-2"><summary class="btn btn-outline-secondary">調整 Entry 賽程位置</summary><form method="post" asp-page-handler="ReorderSchedule" class="mt-3"><input type="hidden" name="id" value="@Model.Tournament.Id" />@for (var position = 0; position < positionedEntries.Count; position++) { <label class="form-label">位置 @(position + 1)</label><select name="OrderedEntryIds" class="form-select mb-2">@foreach (var entry in positionedEntries) { <option value="@entry.Id" selected="@(entry.Id == positionedEntries[position].Id)">@entry.DisplayNameSnapshot</option> }</select> }<button class="btn btn-warning">儲存位置並保留賽程結構</button></form></details>
+        }
+    </section>
+}
+@if (Model.ActionMatches.Any())
+{
+    <section class="card card-body mb-3"><h2 class="h5">等待我處理</h2><div class="list-group">
+    @foreach (var action in Model.ActionMatches) { <a asp-page="Match" asp-route-id="@action.MatchId" class="list-group-item list-group-item-action d-flex justify-content-between"><span>對局 #@action.SequenceNumber</span><span>@action.Status</span></a> }
+    </div></section>
+}
+<section class="card card-body mb-3">
+    <div class="d-flex justify-content-between"><h2 class="h5">有效參賽者</h2><strong>@registered / @Model.Tournament.TargetEntryCount</strong></div>
+    @if (!Model.Tournament.Entries.Any()) { <p class="text-muted mb-0">尚無參賽者。</p> }
+    else { <ol class="mb-0">@foreach (var entry in Model.Tournament.Entries.OrderBy(x => x.RegisteredAtUtc)) { <li>@entry.DisplayNameSnapshot <span class="text-muted">（編號 @entry.RegistrationNumber）</span></li> }</ol> }
+</section>
+@if (Model.Tournament.Mode == TournamentMode.Team && Model.Tournament.RegistrationMode == TournamentRegistrationMode.CompleteTeam && Model.Tournament.Status == TournamentStatus.RegistrationOpen)
+{
+    <section class="card card-body mb-3">
+        <h2 class="h5">我的團體隊伍</h2>
+        @if (Model.TeamWorkspace.PendingInvitations.Any())
+        {
+            <h3 class="h6">待處理邀請</h3>
+            @foreach (var invitation in Model.TeamWorkspace.PendingInvitations)
+            {
+                var teamLabel = invitation.TournamentEntry!.TeamName ?? string.Join(" / ", invitation.TournamentEntry.Members.OrderBy(x => x.MemberOrder).Select(x => x.DisplayNameSnapshot));
+                <div class="border rounded p-2 mb-2"><strong>@teamLabel</strong> 邀請你加入
+                    <form method="post" asp-page-handler="RespondInvitation" class="d-inline"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="invitationId" value="@invitation.Id" /><input type="hidden" name="accept" value="true" /><button class="btn btn-success btn-sm">接受</button></form>
+                    <form method="post" asp-page-handler="RespondInvitation" class="d-inline"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="invitationId" value="@invitation.Id" /><input type="hidden" name="accept" value="false" /><button class="btn btn-outline-secondary btn-sm">拒絕</button></form>
+                </div>
+            }
+        }
+        @if (Model.TeamWorkspace.PendingRepresentativeTransfers.Any())
+        {
+            <h3 class="h6">代表人轉讓</h3>
+            @foreach (var invitation in Model.TeamWorkspace.PendingRepresentativeTransfers)
+            {
+                <div class="border rounded p-2 mb-2"><strong>@invitation.InvitedByUser.DisplayName</strong> 邀請你接任隊伍代表人
+                    <form method="post" asp-page-handler="RespondRepresentativeTransfer" class="d-inline"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="invitationId" value="@invitation.Id" /><input type="hidden" name="accept" value="true" /><button class="btn btn-success btn-sm">接受</button></form>
+                    <form method="post" asp-page-handler="RespondRepresentativeTransfer" class="d-inline"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="invitationId" value="@invitation.Id" /><input type="hidden" name="accept" value="false" /><button class="btn btn-outline-secondary btn-sm">拒絕</button></form>
+                </div>
+            }
+        }
+        @if (Model.TeamWorkspace.Team is null)
+        {
+            <form method="post" asp-page-handler="CreateTeam" class="row g-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><div class="col-md-8"><label asp-for="TeamName" class="form-label">隊名（選填）</label><input asp-for="TeamName" class="form-control" maxlength="100" /></div><div class="col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100">建立臨時隊伍</button></div></form>
+        }
+        else
+        {
+            var team = Model.TeamWorkspace.Team;
+            var me = team.Members.Single(x => x.UserId == User.GetRequiredUserId());
+            <div class="d-flex justify-content-between"><strong>@(team.TeamName ?? "未命名隊伍")</strong><span>@team.Status｜@team.Members.Count / @Model.Tournament.TeamSize 人</span></div>
+            <ul>@foreach (var member in team.Members.OrderBy(x => x.MemberOrder)) { <li>@member.DisplayNameSnapshot @if (member.IsRepresentative) { <span class="badge text-bg-warning">代表人</span> }</li> }</ul>
+            @if (me.IsRepresentative && team.Status == TournamentEntryStatus.Pending && team.Members.Count < Model.Tournament.TeamSize)
+            {
+                <form method="post" asp-page-handler="InviteTeamMember" class="row g-2 mb-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="entryId" value="@team.Id" /><div class="col-md-8"><label asp-for="InvitePlayer" class="form-label">以 Account 或完整 DisplayName 邀請</label><input asp-for="InvitePlayer" class="form-control" /></div><div class="col-md-4 d-flex align-items-end"><button class="btn btn-outline-primary w-100">發送邀請</button></div></form>
+            }
+            @if (me.IsRepresentative && team.Status == TournamentEntryStatus.Pending && team.Members.Count == Model.Tournament.TeamSize)
+            {
+                <form method="post" asp-page-handler="RegisterTeam" class="mb-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="entryId" value="@team.Id" /><button class="btn btn-success">確認整隊正式報名</button></form>
+            }
+            @if (me.IsRepresentative && team.Members.Count > 1)
+            {
+                <form method="post" asp-page-handler="TransferRepresentative" class="row g-2 mb-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="entryId" value="@team.Id" /><div class="col-md-8"><select asp-for="NewRepresentativeId" class="form-select">@foreach (var member in team.Members.Where(x => x.UserId != me.UserId)) { <option value="@member.UserId">@member.DisplayNameSnapshot</option> }</select></div><div class="col-md-4"><button class="btn btn-outline-warning w-100">提出代表人轉讓</button></div></form>
+            }
+            <form method="post" asp-page-handler="LeaveTeam"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-outline-danger" onclick="return confirm('確定退出這支隊伍？')">退出隊伍</button></form>
+        }
+    </section>
+}
+@if (Model.Tournament.Mode == TournamentMode.Team && Model.Tournament.RegistrationMode == TournamentRegistrationMode.SystemAssignedTeam && Model.Tournament.Status == TournamentStatus.RegistrationOpen)
+{
+    <section class="card card-body mb-3">
+        <h2 class="h5">系統配隊</h2>
+        @if (!Model.IsSystemPairingRegistered && Model.Tournament.RegistrationStage == TournamentRegistrationStage.Open)
+        {
+            <p>先以個人身分登記；報名關閉後系統才會隨機組成完整隊伍。</p>
+            <form method="post" asp-page-handler="RegisterForPairing"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-primary">登記系統配隊</button></form>
+        }
+        else if (Model.TeamWorkspace.Team is not null)
+        {
+            var pairingTeam = Model.TeamWorkspace.Team;
+            <div class="alert @(pairingTeam.Status == TournamentEntryStatus.Registered ? "alert-success" : "alert-secondary")">
+                @if (pairingTeam.Status == TournamentEntryStatus.Registered) { <strong>目前配隊：</strong> @pairingTeam.DisplayNameSnapshot }
+                else { <strong>等待配隊或補足隊員。</strong> }
+            </div>
+            <form method="post" asp-page-handler="WithdrawFromPairing"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-outline-danger" onclick="return confirm('確定取消配隊登記？')">取消配隊登記</button></form>
+        }
+        @if (Model.IsOrganizer)
+        {
+            var activePlayers = Model.SystemPairingEntries.Sum(x => x.Members.Count);
+            <hr /><h3 class="h6">主辦方配隊管理</h3><p>目前有效玩家：@activePlayers；完整隊伍：@Model.SystemPairingEntries.Count(x => x.Status == TournamentEntryStatus.Registered)；等待補足：@Model.SystemPairingEntries.Count(x => x.Status == TournamentEntryStatus.Pending)</p>
+            @if (Model.Tournament.RegistrationStage is TournamentRegistrationStage.Closed or TournamentRegistrationStage.AwaitingTeamFormation)
+            {
+                <form method="post" asp-page-handler="GenerateSystemTeams" class="d-inline"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-warning">隨機重新配隊</button></form>
+            }
+            @if (Model.Tournament.RegistrationStage == TournamentRegistrationStage.AwaitingTeamFormation)
+            {
+                <form method="post" asp-page-handler="ReopenPairing" class="d-inline"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-outline-primary">重新開放登記</button></form>
+            }
+            @if (Model.Tournament.RegistrationStage == TournamentRegistrationStage.Closed && Model.SystemPairingEntries.Count(x => x.Status == TournamentEntryStatus.Registered) >= 2)
+            {
+                var assignedMembers = Model.SystemPairingEntries.Where(x => x.Status == TournamentEntryStatus.Registered).SelectMany(x => x.Members).ToList();
+                <form method="post" asp-page-handler="SwapMembers" class="row g-2 mt-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><div class="col-md-5"><select asp-for="FirstMemberId" class="form-select">@foreach (var member in assignedMembers) { <option value="@member.Id">@member.DisplayNameSnapshot</option> }</select></div><div class="col-md-5"><select asp-for="SecondMemberId" class="form-select">@foreach (var member in assignedMembers) { <option value="@member.Id">@member.DisplayNameSnapshot</option> }</select></div><div class="col-md-2"><button class="btn btn-outline-warning w-100">交換</button></div></form>
+            }
+        }
+    </section>
+}
+<div class="d-flex flex-wrap gap-2">
+    @if (Model.IsOrganizer && Model.Tournament.Status == TournamentStatus.RegistrationOpen && Model.Tournament.RegistrationStage == TournamentRegistrationStage.Closed) { <form method="post" asp-page-handler="GenerateSchedule"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-primary">產生賽程草稿</button></form> }
+    @if (Model.IsOrganizer && Model.Tournament.Status == TournamentStatus.RegistrationOpen && Model.Tournament.RegistrationStage == TournamentRegistrationStage.ScheduleDraftCreated) { <form method="post" asp-page-handler="StartTournament"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-success" onclick="return confirm('正式開始後將鎖定參賽者與賽程，確定開始？')">正式開始比賽</button></form><form method="post" asp-page-handler="AbandonSchedule"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-outline-danger">放棄賽程草稿</button></form> }
+    @if (Model.CanRegister) { <form method="post" asp-page-handler="Register"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-primary">我要報名</button></form> }
+    @if (Model.IsRegistered && Model.Tournament.Mode == TournamentMode.Individual && Model.Tournament.Status == TournamentStatus.RegistrationOpen) { <form method="post" asp-page-handler="Withdraw"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-outline-danger" onclick="return confirm('確定取消報名？')">取消報名</button></form> }
+    @if (Model.IsOrganizer && Model.Tournament.Status == TournamentStatus.RegistrationOpen && Model.Tournament.RegistrationStage is TournamentRegistrationStage.Open or TournamentRegistrationStage.CapacityReached) { <form method="post" asp-page-handler="CloseRegistration"><input type="hidden" name="id" value="@Model.Tournament.Id" /><button class="btn btn-warning">關閉報名</button></form> }
+    <a asp-page="Index" class="btn btn-link">返回比賽房間</a>
+</div>
