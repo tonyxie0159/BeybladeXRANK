@@ -47,7 +47,7 @@ GitHub repository 是專案程式碼與本目錄文件的共享版本來源。Co
 
 ## 擴充功能規格
 
-- [賽程功能規格與討論稿](11-Tournament-Schedule/tournament-schedule.md)：單人雙敗／單敗種子制，以及 2v2v2 循環／單敗制。
+- [賽事、賽程與團體對戰功能規格](11-Tournament-Schedule/tournament-schedule.md)：已核准的比賽房間、報名與組隊、單淘汰／雙敗／循環／瑞士輪，以及單人、雙人與三人團體對戰規則。
 
 ## 使用者已確認的關鍵規則
 
