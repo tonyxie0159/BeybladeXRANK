@@ -88,6 +88,62 @@ public static class TournamentScheduleGenerator
         return new TournamentSchedule(TournamentFormat.SingleElimination, entries, matches, byes);
     }
 
+    public static IReadOnlyList<TournamentMatchDefinition> GenerateChampionPlayoff(
+        IEnumerable<int> entryIds,
+        int? randomSeed = null)
+    {
+        var entries = ValidateEntries(entryIds, 512);
+        var currentEntries = entries.Select(TournamentParticipantSource.Entry).ToList();
+        Shuffle(currentEntries, CreateRandom(randomSeed));
+
+        var matches = new List<TournamentMatchDefinition>();
+        var nextMatchId = 1;
+        var sequenceNumber = 1;
+        var mainBracketSize = 1;
+        while (mainBracketSize * 2 <= currentEntries.Count)
+            mainBracketSize *= 2;
+
+        var preliminaryMatchCount = currentEntries.Count - mainBracketSize;
+        var current = new List<TournamentParticipantSource>();
+        for (var index = 0; index < preliminaryMatchCount; index++)
+        {
+            var match = new TournamentMatchDefinition(
+                nextMatchId++,
+                TournamentBracket.Playoff,
+                1,
+                index + 1,
+                sequenceNumber++,
+                currentEntries[index * 2],
+                currentEntries[(index * 2) + 1]);
+            matches.Add(match);
+            current.Add(TournamentParticipantSource.WinnerOf(match.Id));
+        }
+        current.AddRange(currentEntries.Skip(preliminaryMatchCount * 2));
+
+        var roundNumber = preliminaryMatchCount > 0 ? 2 : 1;
+        while (current.Count > 1)
+        {
+            var next = new List<TournamentParticipantSource>();
+            for (var index = 0; index < current.Count; index += 2)
+            {
+                var match = new TournamentMatchDefinition(
+                    nextMatchId++,
+                    TournamentBracket.Playoff,
+                    roundNumber,
+                    (index / 2) + 1,
+                    sequenceNumber++,
+                    current[index],
+                    current[index + 1]);
+                matches.Add(match);
+                next.Add(TournamentParticipantSource.WinnerOf(match.Id));
+            }
+            current = next;
+            roundNumber++;
+        }
+
+        return matches;
+    }
+
     public static TournamentSchedule GenerateDoubleElimination(
         IEnumerable<int> entryIds,
         int? randomSeed = null)

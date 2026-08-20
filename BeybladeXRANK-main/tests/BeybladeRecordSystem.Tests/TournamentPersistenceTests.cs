@@ -12,6 +12,15 @@ namespace BeybladeRecordSystem.Tests;
 public class TournamentPersistenceTests
 {
     [Fact]
+    public void CurrentModel_HasNoPendingMigrationChanges()
+    {
+        using var context = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite("Data Source=:memory:").Options);
+
+        Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
     public async Task Migrations_CreateTournamentTablesAlongsideExistingBattleTables()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -38,6 +47,7 @@ public class TournamentPersistenceTests
         Assert.Contains("TournamentMatchParticipants", tables);
         Assert.Contains("BattleLineupSelections", tables);
         Assert.Contains("BattleTeamOrderSelections", tables);
+        Assert.Contains("QuickBattleInvitations", tables);
     }
 
     [Fact]
@@ -120,6 +130,82 @@ public class TournamentPersistenceTests
     }
 
     [Fact]
+    public async Task VoidedAuditMigration_PreservesExistingActiveTournamentBattle()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateContext(connection);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260819170457_AddBattleLineupSequenceSubmissions");
+        await context.Database.ExecuteSqlRawAsync("""
+            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (1, 'void-org', 'hash', 'Organizer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (2, 'void-a', 'hash', 'Player A', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (3, 'void-b', 'hash', 'Player B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            INSERT INTO Tournaments (Id, Name, Mode, Format, RegistrationMode, RuleSet, Status, RegistrationStage, BeybladesPerPlayer, ScoreToWin, TargetEntryCount, OrganizerUserId, RulesSnapshot, CreatedAtUtc, UpdatedAtUtc, Version)
+            VALUES (1, 'Existing Tournament', 0, 0, 0, 0, 1, 5, 3, 4, 2, 1, 'snapshot', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
+            INSERT INTO TournamentEntries (Id, TournamentId, IndividualUserId, DisplayNameSnapshot, Status, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (1, 1, 2, 'Player A', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (2, 1, 3, 'Player B', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            INSERT INTO TournamentMatches (Id, TournamentId, Bracket, RoundNumber, MatchNumber, SequenceNumber, Status, SideASourceKind, SideASourceReferenceId, SideBSourceKind, SideBSourceReferenceId, SideAEntryId, SideBEntryId, IsBye, IsSeedQualifier, IsResetFinal, CreatedAtUtc, UpdatedAtUtc, Version)
+            VALUES (1, 1, 0, 1, 1, 1, 8, 0, 1, 0, 2, 1, 2, 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
+            INSERT INTO Battles (Id, SourceType, ScoreToWin, TournamentMatchId, PlayerAId, PlayerBId, CreatedByUserId, Status, SideAScore, SideBScore, SideADesignation, CreatedAtUtc, StartedAtUtc, Version)
+            VALUES (1, 1, 4, 1, 2, 3, 1, 2, 1, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
+            """);
+
+        await migrator.MigrateAsync();
+        context.ChangeTracker.Clear();
+        var battle = await context.Battles.SingleAsync();
+        Assert.Equal(BattleStatus.InProgress, battle.Status);
+        Assert.Equal(1, battle.TournamentMatchId);
+        Assert.Null(battle.VoidedTournamentMatchId);
+        Assert.Null(battle.VoidedByUserId);
+        Assert.Null(battle.VoidedAtUtc);
+        Assert.Null(battle.VoidReason);
+        Assert.Null(battle.VoidSnapshot);
+    }
+
+    [Fact]
+    public async Task RevisionReplayAuditMigration_PreservesExistingRevisionAndEvent()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateContext(connection);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260820015613_AddVoidedTournamentBattleAudit");
+        await context.Database.ExecuteSqlRawAsync("""
+            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (1, 'revision-a', 'hash', 'Player A', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (2, 'revision-b', 'hash', 'Player B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            INSERT INTO Beyblades (Id, UserId, Name, IsDeleted, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (1, 1, 'Blade A', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (2, 2, 'Blade B', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            INSERT INTO Battles (Id, SourceType, ScoreToWin, PlayerAId, PlayerBId, CreatedByUserId, Status, SideAScore, SideBScore, CreatedAtUtc, Version)
+            VALUES (1, 0, 4, 1, 2, 1, 2, 1, 0, CURRENT_TIMESTAMP, X'01');
+            INSERT INTO BattleLineups (Id, BattleId, SequenceNo, PositionNo, PlayerAId, PlayerADisplayNameSnapshot, PlayerABeybladeId, PlayerABeybladeNameSnapshot, PlayerBId, PlayerBDisplayNameSnapshot, PlayerBBeybladeId, PlayerBBeybladeNameSnapshot, IsCurrent)
+            VALUES (1, 1, 1, 1, 1, 'Player A', 1, 'Blade A', 2, 'Player B', 2, 'Blade B', 1);
+            INSERT INTO BattleRounds (Id, BattleId, LineupId, RoundNo, PositionNo, PlayerAId, PlayerADisplayNameSnapshot, PlayerABeybladeId, PlayerABeybladeNameSnapshot, PlayerBId, PlayerBDisplayNameSnapshot, PlayerBBeybladeId, PlayerBBeybladeNameSnapshot, Status, CreatedAtUtc, CompletedAtUtc)
+            VALUES (1, 1, 1, 1, 1, 1, 'Player A', 1, 'Blade A', 2, 'Player B', 2, 'Blade B', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            INSERT INTO BattleRoundEvents (Id, BattleRoundId, EventSequence, EventType, WinnerPlayerId, ResultType, ScoreAwarded, IsEffective, CreatedAtUtc)
+            VALUES (1, 1, 1, 0, 1, 0, 1, 1, CURRENT_TIMESTAMP);
+            INSERT INTO BattleRoundRevisions (Id, BattleRoundId, ChangedByUserId, ChangedAtUtc, Reason, PreviousEffectiveEventSnapshot, NewEffectiveEventSnapshot)
+            VALUES (1, 1, 1, CURRENT_TIMESTAMP, 'existing correction', '{{"score":0}}', '{{"score":1}}');
+            """);
+
+        await migrator.MigrateAsync();
+        context.ChangeTracker.Clear();
+
+        var revision = await context.BattleRoundRevisions.SingleAsync();
+        var roundEvent = await context.BattleRoundEvents.SingleAsync();
+        Assert.Equal("existing correction", revision.Reason);
+        Assert.Equal("{\"score\":0}", revision.PreviousEffectiveEventSnapshot);
+        Assert.Equal("{\"score\":1}", revision.NewEffectiveEventSnapshot);
+        Assert.Equal(string.Empty, revision.PreviousBattleSnapshot);
+        Assert.Equal(string.Empty, revision.NewBattleSnapshot);
+        Assert.Null(roundEvent.InvalidationReason);
+    }
+
+    [Fact]
     public async Task DuplicateRegistrationNumberWithinTournament_IsRejected()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -179,7 +265,7 @@ public class TournamentPersistenceTests
     }
 
     [Fact]
-    public async Task TournamentTeamBattle_CanLinkMatchWithoutLegacyTopLevelPlayers()
+    public async Task TournamentTeamBattle_CanRetainVoidedAttemptAlongsideActiveReplacement()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -223,6 +309,44 @@ public class TournamentPersistenceTests
         Assert.Null(battle.PlayerBId);
         Assert.Equal(match.Id, battle.TournamentMatchId);
         Assert.Equal(8, battle.ScoreToWin);
+
+        var voidedAt = DateTime.UtcNow;
+        battle.Status = BattleStatus.Voided;
+        battle.TournamentMatchId = null;
+        battle.TournamentMatch = null;
+        battle.VoidedTournamentMatchId = match.Id;
+        battle.VoidedTournamentMatch = match;
+        battle.VoidedByUserId = organizer.Id;
+        battle.VoidReason = "測試撤銷";
+        battle.VoidSnapshot = "{\"status\":\"Completed\"}";
+        battle.VoidedAtUtc = voidedAt;
+        match.Battle = null;
+        await context.SaveChangesAsync();
+        var replacement = new Battle
+        {
+            SourceType = BattleSourceType.TournamentTeam,
+            ScoreToWin = 8,
+            TournamentMatchId = match.Id,
+            CreatedByUserId = organizer.Id,
+            Status = BattleStatus.Draft,
+            CreatedAtUtc = DateTime.UtcNow,
+            Version = [2]
+        };
+        context.Battles.Add(replacement);
+        await context.SaveChangesAsync();
+
+        context.ChangeTracker.Clear();
+        var reloaded = await context.TournamentMatches
+            .Include(x => x.Battle)
+            .Include(x => x.VoidedBattles)
+            .SingleAsync(x => x.Id == match.Id);
+        Assert.Equal(replacement.Id, reloaded.Battle!.Id);
+        var historical = Assert.Single(reloaded.VoidedBattles);
+        Assert.Equal(battle.Id, historical.Id);
+        Assert.Equal(BattleStatus.Voided, historical.Status);
+        Assert.Equal("測試撤銷", historical.VoidReason);
+        Assert.Equal("{\"status\":\"Completed\"}", historical.VoidSnapshot);
+        Assert.Equal(organizer.Id, historical.VoidedByUserId);
     }
 
     private static AppDbContext CreateContext(SqliteConnection connection) =>

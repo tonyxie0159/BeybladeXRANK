@@ -14,7 +14,8 @@ public enum TournamentBracket
     Losers,
     GrandFinal,
     RoundRobin,
-    Swiss
+    Swiss,
+    Playoff
 }
 
 public enum TournamentParticipantSourceKind

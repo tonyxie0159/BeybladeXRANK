@@ -83,6 +83,102 @@ public class BattleRulesTests
     }
 
     [Fact]
+    public async Task RevisionReplay_InvalidatesEventsAfterFirstThreshold_AndCanReactivateThem()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+        var roundIds = new List<int>();
+        var roundId = setup.CurrentRoundId;
+        for (var index = 0; index < 3; index++)
+        {
+            roundIds.Add(roundId);
+            Assert.True((await setup.Service.RecordBattleResultAsync(
+                setup.BattleId, roundId, setup.PlayerAId, setup.PlayerAId, ResultType.SpinFinish)).Succeeded);
+            var completed = await setup.Service.CompleteRoundAsync(setup.BattleId, roundId, setup.PlayerAId);
+            if (index < 2) roundId = completed.Value!.Id;
+        }
+        Assert.True((await setup.Flow.SubmitReorderAsync(
+            setup.BattleId, setup.PlayerAId,
+            setup.PlayerABladeIds.AsEnumerable().Reverse().ToList())).Succeeded);
+        Assert.True((await setup.Flow.SubmitReorderAsync(
+            setup.BattleId, setup.PlayerBId,
+            setup.PlayerBBladeIds.AsEnumerable().Reverse().ToList())).Succeeded);
+        var fourthRound = await setup.Db.BattleRounds.SingleAsync(x =>
+            x.BattleId == setup.BattleId && x.RoundNo == 4);
+        roundIds.Add(fourthRound.Id);
+        Assert.True((await setup.Service.RecordBattleResultAsync(
+            setup.BattleId, fourthRound.Id, setup.PlayerAId, setup.PlayerBId, ResultType.SpinFinish)).Succeeded);
+        Assert.True((await setup.Service.CompleteRoundAsync(
+            setup.BattleId, fourthRound.Id, setup.PlayerAId)).Succeeded);
+
+        Assert.True((await setup.Service.ReviseRoundAsync(
+            setup.BattleId, roundIds[0], setup.PlayerAId, setup.PlayerAId,
+            ResultType.Extreme, "較早 Round 應為極限得分")).Succeeded);
+
+        setup.Db.ChangeTracker.Clear();
+        var battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
+        var rounds = await setup.Db.BattleRounds.Include(x => x.Events)
+            .Where(x => x.BattleId == setup.BattleId).OrderBy(x => x.RoundNo).ToListAsync();
+        Assert.Equal(BattleStatus.VictoryPendingCompletion, battle.Status);
+        Assert.Equal(4, battle.SideAScore);
+        Assert.Equal(0, battle.SideBScore);
+        Assert.Contains(rounds[0].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.SupersededByRevision);
+        Assert.Contains(rounds[0].Events, x => x.IsEffective && x.ResultType == ResultType.Extreme);
+        Assert.Contains(rounds[2].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.VictoryThresholdReached);
+        Assert.Contains(rounds[3].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.VictoryThresholdReached);
+
+        Assert.True((await setup.Service.ReviseRoundAsync(
+            setup.BattleId, roundIds[0], setup.PlayerAId, setup.PlayerAId,
+            ResultType.SpinFinish, "恢復原始一分判決")).Succeeded);
+
+        setup.Db.ChangeTracker.Clear();
+        battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
+        rounds = await setup.Db.BattleRounds.Include(x => x.Events)
+            .Where(x => x.BattleId == setup.BattleId).OrderBy(x => x.RoundNo).ToListAsync();
+        Assert.Equal(BattleStatus.InProgress, battle.Status);
+        Assert.Equal(3, battle.SideAScore);
+        Assert.Equal(1, battle.SideBScore);
+        Assert.Contains(rounds[2].Events, x => x.IsEffective && x.InvalidationReason is null);
+        Assert.Contains(rounds[3].Events, x => x.IsEffective && x.InvalidationReason is null);
+        var revisions = await setup.Db.BattleRoundRevisions
+            .Where(x => x.BattleRoundId == roundIds[0]).OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal(2, revisions.Count);
+        Assert.All(revisions, x =>
+        {
+            Assert.NotEmpty(x.PreviousBattleSnapshot);
+            Assert.NotEmpty(x.NewBattleSnapshot);
+        });
+    }
+
+    [Fact]
+    public async Task RevisingCompletedBattleBelowThreshold_ReopensBattleAtNextUnplayedPosition()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+        Assert.True((await setup.Service.RecordBattleResultAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId, setup.PlayerAId, ResultType.Extreme)).Succeeded);
+        var secondRound = (await setup.Service.CompleteRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId)).Value!;
+        Assert.True((await setup.Service.RecordBattleResultAsync(
+            setup.BattleId, secondRound.Id, setup.PlayerAId, setup.PlayerAId, ResultType.SpinFinish)).Succeeded);
+        Assert.True((await setup.Service.FinishBattleAsync(setup.BattleId, setup.PlayerAId)).Succeeded);
+
+        Assert.True((await setup.Service.ReviseRoundAsync(
+            setup.BattleId, secondRound.Id, setup.PlayerAId, setup.PlayerBId,
+            ResultType.SpinFinish, "第二局勝方修正")).Succeeded);
+
+        setup.Db.ChangeTracker.Clear();
+        var battle = await setup.Db.Battles.Include(x => x.Rounds).SingleAsync(x => x.Id == setup.BattleId);
+        Assert.Equal(BattleStatus.InProgress, battle.Status);
+        Assert.Equal(3, battle.SideAScore);
+        Assert.Equal(1, battle.SideBScore);
+        Assert.Null(battle.WinningPlayerId);
+        Assert.Null(battle.WinningSide);
+        Assert.Null(battle.CompletedAtUtc);
+        var continuation = Assert.Single(battle.Rounds, x => x.Status == BattleRoundStatus.InProgress);
+        Assert.Equal(3, continuation.RoundNo);
+        Assert.Equal(3, continuation.PositionNo);
+    }
+
+    [Fact]
     public async Task ThreeCompletedRoundsBelowFour_CanReorderOnlyOriginalBlades_AndKeepsScore()
     {
         await using var setup = await TestBattle.CreateAsync();
@@ -94,15 +190,20 @@ public class BattleRulesTests
             if (index < 2) roundId = complete.Value!.Id;
         }
 
-        var reordered = await setup.Service.CreateReorderedLineupAsync(setup.BattleId, setup.PlayerAId, setup.PlayerABladeIds.AsEnumerable().Reverse().ToList(), setup.PlayerBBladeIds.AsEnumerable().Reverse().ToList());
+        Assert.True((await setup.Flow.SubmitReorderAsync(
+            setup.BattleId, setup.PlayerAId,
+            setup.PlayerABladeIds.AsEnumerable().Reverse().ToList())).Succeeded);
+        Assert.True((await setup.Flow.SubmitReorderAsync(
+            setup.BattleId, setup.PlayerBId,
+            setup.PlayerBBladeIds.AsEnumerable().Reverse().ToList())).Succeeded);
 
-        Assert.True(reordered.Succeeded);
         var battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
         var currentLineup = await setup.Db.BattleLineups.Where(x => x.BattleId == setup.BattleId && x.IsCurrent).OrderBy(x => x.PositionNo).ToListAsync();
+        var fourthRound = await setup.Db.BattleRounds.SingleAsync(x => x.BattleId == setup.BattleId && x.RoundNo == 4);
         Assert.Equal(3, battle.PlayerAScore);
         Assert.Equal(2, currentLineup[0].SequenceNo);
         Assert.Equal(setup.PlayerABladeIds[2], currentLineup[0].PlayerABeybladeId);
-        Assert.Equal(4, reordered.Value!.RoundNo);
+        Assert.Equal(4, fourthRound.RoundNo);
     }
 
     [Fact]
@@ -152,6 +253,91 @@ public class BattleRulesTests
     }
 
     [Fact]
+    public async Task QuickBattleForfeit_PreservesCompletedRound_InvalidatesCurrentRound_AndCountsStatistics()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+        Assert.True((await setup.Service.RecordBattleResultAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId,
+            setup.PlayerAId, ResultType.SpinFinish)).Succeeded);
+        var secondRound = (await setup.Service.CompleteRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId)).Value!;
+        Assert.True((await setup.Service.RecordLaunchFaultAsync(
+            setup.BattleId, secondRound.Id, setup.PlayerAId, setup.PlayerAId)).Succeeded);
+        Assert.True((await setup.Service.RecordLaunchFaultAsync(
+            setup.BattleId, secondRound.Id, setup.PlayerAId, setup.PlayerAId)).Succeeded);
+
+        Assert.False((await setup.Service.ForfeitQuickBattleAsync(
+            setup.BattleId, setup.PlayerBId, setup.PlayerBId)).Succeeded);
+        Assert.False((await setup.Service.ForfeitQuickBattleAsync(
+            setup.BattleId, setup.PlayerAId, int.MaxValue)).Succeeded);
+        Assert.True((await setup.Service.ForfeitQuickBattleAsync(
+            setup.BattleId, setup.PlayerAId, setup.PlayerBId)).Succeeded);
+
+        setup.Db.ChangeTracker.Clear();
+        var battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
+        var rounds = await setup.Db.BattleRounds.Include(x => x.Events)
+            .Where(x => x.BattleId == setup.BattleId).OrderBy(x => x.RoundNo).ToListAsync();
+        Assert.Equal(BattleStatus.Forfeited, battle.Status);
+        Assert.Equal(setup.PlayerAId, battle.WinningPlayerId);
+        Assert.Equal(BattleSide.B, battle.WinningSide);
+        Assert.Equal(1, battle.SideAScore);
+        Assert.Equal(0, battle.SideBScore);
+        Assert.NotNull(battle.CompletedAtUtc);
+        Assert.All(rounds[0].Events, x => Assert.True(x.IsEffective));
+        Assert.All(rounds[1].Events, x =>
+        {
+            Assert.False(x.IsEffective);
+            Assert.Equal(BattleRoundEventInvalidationReason.BattleTerminated, x.InvalidationReason);
+        });
+
+        var statistics = new StatisticsService(setup.Db);
+        var winner = await statistics.GetUserSummaryAsync(setup.PlayerAId);
+        var loser = await statistics.GetUserSummaryAsync(setup.PlayerBId);
+        Assert.Equal((1, 0, 1, 0), (winner.Wins, winner.Losses, winner.Score, winner.AgainstScore));
+        Assert.Equal((0, 1, 0, 1), (loser.Wins, loser.Losses, loser.Score, loser.AgainstScore));
+        var winnerBlade = (await statistics.GetBeybladeStatisticsAsync(setup.PlayerAId, null))
+            .Single(x => x.BeybladeId == setup.PlayerABladeIds[0]);
+        Assert.Equal((1, 0, 1, 0), (winnerBlade.Wins, winnerBlade.Losses, winnerBlade.Score, winnerBlade.AgainstScore));
+        Assert.True((await statistics.GetBattleHistoryAsync(setup.PlayerAId)).Single().Won);
+        Assert.Equal(1, (await statistics.GetOpponentStatisticsAsync(setup.PlayerAId)).Single().Wins);
+        Assert.False((await setup.Service.ReviseRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId,
+            setup.PlayerBId, ResultType.Extreme, "終止後不可修改")).Succeeded);
+    }
+
+    [Fact]
+    public async Task QuickBattleCancellation_RequiresConfirmationAndHardDeletesEntireAggregate()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+        Assert.True((await setup.Service.RecordBattleResultAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId,
+            setup.PlayerAId, ResultType.SpinFinish)).Succeeded);
+        Assert.True((await setup.Service.ReviseRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId,
+            setup.PlayerBId, ResultType.SpinFinish, "取消前修正測試")).Succeeded);
+
+        Assert.False((await setup.Service.CancelQuickBattleAsync(
+            setup.BattleId, setup.PlayerAId, false)).Succeeded);
+        Assert.False((await setup.Service.CancelQuickBattleAsync(
+            setup.BattleId, setup.PlayerBId, true)).Succeeded);
+        Assert.True(await setup.Db.Battles.AnyAsync(x => x.Id == setup.BattleId));
+
+        Assert.True((await setup.Service.CancelQuickBattleAsync(
+            setup.BattleId, setup.PlayerAId, true)).Succeeded);
+
+        setup.Db.ChangeTracker.Clear();
+        Assert.False(await setup.Db.Battles.AnyAsync(x => x.Id == setup.BattleId));
+        Assert.False(await setup.Db.BattleLineups.AnyAsync(x => x.BattleId == setup.BattleId));
+        Assert.False(await setup.Db.BattleRounds.AnyAsync(x => x.BattleId == setup.BattleId));
+        Assert.Empty(await setup.Db.BattleRoundEvents.ToListAsync());
+        Assert.Empty(await setup.Db.BattleRoundRevisions.ToListAsync());
+        var statistics = new StatisticsService(setup.Db);
+        Assert.Equal(0, (await statistics.GetUserSummaryAsync(setup.PlayerAId)).Wins);
+        Assert.All(await statistics.GetBeybladeStatisticsAsync(setup.PlayerAId, null),
+            x => Assert.Equal(0, x.Wins + x.Losses + x.Score + x.AgainstScore));
+    }
+
+    [Fact]
     public async Task AssignSides_BeforeStart_UpdatesSideWithoutChangingParticipants()
     {
         await using var setup = await TestBattle.CreateAsync(startBattle: false);
@@ -170,6 +356,7 @@ public class BattleRulesTests
         private readonly SqliteConnection _connection;
         public AppDbContext Db { get; }
         public BattleService Service { get; }
+        public QuickBattleFlowService Flow { get; }
         public int BattleId { get; private init; }
         public int CurrentRoundId { get; private init; }
         public int PlayerAId { get; private init; }
@@ -182,6 +369,7 @@ public class BattleRulesTests
             _connection = connection;
             Db = db;
             Service = new BattleService(db);
+            Flow = new QuickBattleFlowService(db);
         }
 
         public static async Task<TestBattle> CreateAsync(bool startBattle = true)
@@ -199,17 +387,24 @@ public class BattleRulesTests
             db.Beyblades.AddRange(blades);
             await db.SaveChangesAsync();
             var service = new BattleService(db);
-            var battle = (await service.CreateDraftAsync(a.Id, b.Id)).Value!;
-            await service.SetLineupAsync(battle.Id, a.Id, blades.Take(3).Select(x => x.Id).ToList(), blades.Skip(3).Select(x => x.Id).ToList());
-            await service.LockLineupAsync(battle.Id, a.Id);
+            var flow = new QuickBattleFlowService(db);
+            var invitation = (await flow.SendInvitationAsync(a.Id, b.Id)).Value!;
+            var battleId = (await flow.AcceptInvitationAsync(invitation.Id, b.Id)).Value;
+            Assert.True((await flow.SubmitLineupAsync(
+                battleId, a.Id, blades.Take(3).Select(x => x.Id).ToList())).Succeeded);
+            Assert.True((await flow.SubmitLineupAsync(
+                battleId, b.Id, blades.Skip(3).Select(x => x.Id).ToList())).Succeeded);
+            Assert.True((await flow.ConfirmLineupAsync(battleId, a.Id)).Succeeded);
+            Assert.True((await flow.ConfirmLineupAsync(battleId, b.Id)).Succeeded);
             var roundId = 0;
             if (startBattle)
             {
-                roundId = (await service.StartBattleAsync(battle.Id, a.Id)).Value!.Id;
+                await service.AssignSidesAsync(battleId, a.Id, BattleSide.B);
+                roundId = (await service.StartBattleAsync(battleId, a.Id)).Value!.Id;
             }
             return new TestBattle(connection, db)
             {
-                BattleId = battle.Id, CurrentRoundId = roundId, PlayerAId = a.Id, PlayerBId = b.Id,
+                BattleId = battleId, CurrentRoundId = roundId, PlayerAId = a.Id, PlayerBId = b.Id,
                 PlayerABladeIds = blades.Take(3).Select(x => x.Id).ToList(), PlayerBBladeIds = blades.Skip(3).Select(x => x.Id).ToList()
             };
         }

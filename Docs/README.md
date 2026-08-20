@@ -1,72 +1,69 @@
 # BeybladeRecordSystem 開發文件
 
-本文件集是 BeybladeRecordSystem 的唯一開發規格來源，供 AI Coding Agent 依序實作。
+本目錄是 BeybladeRecordSystem 的唯一產品與工程規格來源。所有新功能、資料模型、UI、測試與 Pull Request 都必須以本目錄的有效規格為準。
 
-## 版本與同步原則
+## 文件狀態與適用順序
 
-GitHub repository 是專案程式碼與本目錄文件的共享版本來源。Codex 工作環境中的 Git checkout 是獨立的本地工作副本，不會因為綁定 GitHub 帳號而自動把 commit 同步回 GitHub。
+以下文件全部描述同一套現行有效規格，不保留舊版流程作為替代方案：
 
-為確保不同裝置或新的 Codex 工作環境取得相同版本，每次變更必須：
+1. `01-Product/requirements.md`：全產品共通需求與邊界。
+2. `11-Tournament-Schedule/tournament-schedule.md`：Tournament 專用流程；在 Tournament 情境下，其明確規則優先於快速對戰的固定值。
+3. `04-Battle-Rules/`：所有 Battle 共用的計分、事件、狀態與修正原則。
+4. `03-Database/schema.md`、`06-API/endpoints.md`：現行資料與 Application Service 契約。
+5. `05-UI-UX/screens.md`、`07-Statistics/statistics.md`：畫面與查詢輸出規格。
+6. `08-Development/`：實作狀態、待補功能、驗收證據與開發順序；它不會覆寫產品規則。
+7. `09-Deployment/`、`10-AI-Coding-Rules/`：部署及開發紀律。
 
-1. 在目前分支完成並檢查變更。
-2. 建立 Git commit。
-3. 將分支推送至 GitHub，並建立 Pull Request。
-4. Pull Request 合併至 GitHub 的預設分支後，才視為其他環境都能取得的正式版本。
+第三方套件的 `LICENSE.md`、repository 的 `AGENTS.md` 與一般 README 不屬於產品規格，不受上述內容合併規則影響。
 
-只有本地 commit、尚未推送的分支或對話內容都不是跨裝置的共享來源。開始新工作前應從 GitHub 預設分支建立最新 checkout，避免以舊副本繼續開發。
+若文件內容無法依上述順序消除歧義，停止實作並由使用者確認，不得同時保留互斥規格。
 
-## 核心目標
+## GitHub 同步原則
 
-完成一個手機／平板優先的戰鬥陀螺 1v1 戰績工具。
+GitHub repository 是程式碼與本文件集的共享版本來源。Codex 本地 checkout 不會因綁定 GitHub 帳號而自動同步。
 
-技術方向：
+每次變更必須：
 
-- .NET 10 LTS
-- ASP.NET Core
-- Razor Pages
-- Bootstrap
-- Vanilla JavaScript（僅在必要處使用）
-- Entity Framework Core
-- SQLite
-- Docker
-- Cloudflare Tunnel
+1. 從 GitHub 預設分支建立 `codex/<short-description>` 分支。
+2. 只處理一個可獨立審查的主題。
+3. 完成建置、測試與文件一致性檢查。
+4. 建立 commit、推送分支並開啟 draft Pull Request。
+5. 驗證完成後才將 PR 轉為 ready；合併後才是其他環境可取得的正式版本。
 
-第一版刻意不採前後端分離、Blazor Server、React、Vue、獨立 API Server、獨立 DB Container 或其他非必要基礎設施。
+不得提交密碼、Token、API Key、SQLite 資料庫、Data Protection keys、`data/`、建置輸出或使用者設定。
 
-## 開發原則
+## 核心產品
 
-1. 需求完整性優先。
-2. 最短可驗收路徑優先。
-3. 所有戰鬥規則由後端服務判定。
-4. 前端不可自行計算或信任分數。
-5. 戰績由原始對戰資料查詢計算，不建立冗餘 Statistics Table。
-6. 不自行增加需求。
-7. 不為未提出的未來需求預留複雜架構。
-8. 每完成一個階段即建置並測試。
-9. 任何無法由需求明確推導的規則，不得自行決定；應停止並提出問題。
+這是一個手機／平板優先的戰鬥陀螺賽事與戰績工具，包含：
 
-## 擴充功能規格
+- 帳號、Cookie 登入與個人陀螺管理。
+- 以站內邀請建立的快速對戰。
+- 單人與 Tournament-scoped 團體賽。
+- 單淘汰、雙敗、單循環與瑞士輪。
+- Battle、Round、事件、修正紀錄及來源／B／X Side 戰績。
 
-- [賽事、賽程與團體對戰功能規格](11-Tournament-Schedule/tournament-schedule.md)：已核准的比賽房間、報名與組隊、單淘汰／雙敗／循環／瑞士輪，以及單人、雙人與三人團體對戰規則。
+技術固定為 .NET 10、ASP.NET Core Razor Pages、Bootstrap、Vanilla JavaScript、EF Core、SQLite、Docker 與主機側 Cloudflare Tunnel。第一版不採 SPA、獨立 API Server、獨立 DB Container、WebSocket 或 SignalR。
 
-## 使用者已確認的關鍵規則
+## 全域有效規則
 
-- 對戰由建立對戰的人負責全部操作。
-- 雙方各選三顆陀螺並排列 1、2、3，雙方確認後不可更換。
-- 依順位進行 1v1、2v2、3v3。
-- 任一方累積達到或超過 4 分時，即取得勝利條件。
-- 達成勝利條件後，不自動鎖定；操作人必須按「對戰結束」才正式完成並鎖定。
-- 三顆打完若無人達到 4 分，可以重新排列三顆陀螺，但不能更換陀螺，分數繼續累計。
-- 轉停 1 分、擊飛 2 分、爆裂 2 分、極限 3 分。
-- 發射失誤是單一失分事件，不結束 BattleRound。
-- 同一顆陀螺繼續對戰；同一顆陀螺的發射失誤累計達兩次時，對方得 1 分，失誤次數歸零。
-- 發射失誤必須獨立記錄，並可統計個人歷史因發射失誤失掉的總分。
-- 一個 BattleRound 最終可以同時包含勝負結果與發射失誤事件。
-- 可以修改「該局」全部勝負紀錄，而非只修改上一筆。
-- 修改後必須重新計算該局及整場對戰的有效分數與勝負狀態。
-- 陀螺名稱對同一使用者不可重複；不同使用者可以使用相同名稱。
-- User Account 與 Display Name 分離；Display Name 可修改。
-- 使用者登入採帳號 + 密碼。
-- 陀螺改名不改變陀螺身分；歷史對戰需保存名稱 Snapshot。
-- SQLite 資料持久化於主機。
-- 對外連線使用 Cloudflare Tunnel。
+- 快速對戰固定每人三顆、`ScoreToWin = 4`；Tournament 依建立時鎖定的 RuleSet 使用 4、5、6 或 8 分。
+- 分數只保存為 `Battle.SideAScore`／`SideBScore`；`SideADesignation` 表示資料 Side A 是 B Side 或 X Side，另一側必為相反站位。
+- `Player A/B` 是資料配對方向，`B/X Side` 是開賽前鎖定的站位，兩者不可混用。
+- 轉停 1 分、擊飛 2 分、爆裂 2 分、極限 3 分；第二次有效發射失誤使對手得 1 分且 fault count 歸零。
+- 達 `ScoreToWin` 只進入 `VictoryPendingCompletion`，必須由授權裁判明確完成。
+- 同一 Battle 的重排只能使用首次鎖定的陀螺，保存新 `SequenceNo`，分數不歸零。
+- 快速對戰取消會交易式硬刪除 aggregate；Tournament 取消、棄權或撤銷必須保留規範要求的歷史與 audit。
+- 戰績由 Battle、Round 與有效 Event 即時計算，不建立 Statistics Table。
+- 快速、Tournament 個人、Tournament 團體隊伍結果與團體實際小局分開計算；B／X Side 可獨立篩選與排序。
+
+## 已淘汰且不得重新引入
+
+- 接受邀請前先建立 `Battle`，或把 InvitationPending／Rejected 當成快速 Battle 狀態。
+- 由建立者替對手選陀螺，或以單一表單同時提交雙方 Lineup／Reorder。
+- 以 `PlayerAScore`／`PlayerBScore` 作為資料庫正式欄位。
+- 保存 `BSidePlayerId`、`XSidePlayerId` 或 `ForfeitedPlayerId`；站位與棄權方由現行 Side／Winner／Tournament Match 資料推導。
+- 假設所有 Tournament 都是三顆 4 分制。
+- 對所有 Battle 一律硬刪除取消資料；硬刪除只適用快速對戰取消。
+- 把 Tournament-scoped 臨時隊伍誤當成永久社群 Team 功能。
+
+目前實作與有效規格之間的差距只記錄在 `08-Development/development-plan.md`，不得以舊文件內容填補。

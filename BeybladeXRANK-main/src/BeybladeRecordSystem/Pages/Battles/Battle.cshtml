@@ -6,6 +6,51 @@
 @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
 @if (Model.Battle.Status == BattleStatus.VictoryPendingCompletion) { <div class="alert alert-warning"><strong>已達勝利條件</strong>，請確認紀錄後按「對戰結束」。</div>@if (Model.CanOperate) { <form method="post" asp-page-handler="Finish"><input type="hidden" name="id" value="@Model.Battle.Id" /><button class="btn btn-danger btn-lg w-100">對戰結束</button></form> } }
 @if (Model.Battle.Status == BattleStatus.Completed) { <div class="alert alert-success">對戰已完成。</div> }
-<div class="d-flex gap-2 mb-3"><a asp-page="Revise" asp-route-id="@Model.Battle.Id" class="btn btn-outline-secondary">Round 判決修改</a>@if (Model.CanReorder) { <a asp-page="Reorder" asp-route-id="@Model.Battle.Id" class="btn btn-outline-primary">重新排列陣容</a> }</div>
+@if (Model.Battle.Status == BattleStatus.Forfeited) { <div class="alert alert-warning">對戰已因棄權結束；已完成回合仍列入統計。</div> }
+@if (Model.Battle.Status == BattleStatus.Cancelled) { <div class="alert alert-secondary">對戰已隨賽事取消；未完成回合不列入統計。</div> }
+@if (Model.Battle.Status == BattleStatus.Voided) { <div class="alert alert-dark"><strong>此 Battle 已撤銷且不列入任何正式統計。</strong>@if (!string.IsNullOrWhiteSpace(Model.Battle.VoidReason)) { <span> 原因：@Model.Battle.VoidReason</span> }@if (Model.Battle.VoidedAtUtc is not null) { <div class="small mt-1">撤銷時間：@Model.Battle.VoidedAtUtc.Value.ToLocalTime()；操作者：@(Model.Battle.VoidedByUser?.DisplayName ?? "未知")</div> }</div> }
+<div class="d-flex gap-2 mb-3">@if (Model.CanOperate && Model.Battle.Status is BattleStatus.InProgress or BattleStatus.ReorderSelection or BattleStatus.VictoryPendingCompletion or BattleStatus.Completed) { <a asp-page="Revise" asp-route-id="@Model.Battle.Id" class="btn btn-outline-secondary">Round 判決修改</a> }@if (Model.CanReorder) { <a asp-page="Reorder" asp-route-id="@Model.Battle.Id" class="btn btn-outline-primary">密封重新排列</a> }</div>
+@if (Model.CanTerminateQuick || Model.CanCancelQuick)
+{
+    <section class="card card-body border-danger mb-3">
+        <h2 class="h5">快速對戰終止處理</h2>
+        <p class="small text-muted">棄權會保留已完成回合；取消則永久刪除整場對戰、回合與事件。</p>
+        @if (Model.CanTerminateQuick)
+        {
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <form method="post" asp-page-handler="ForfeitQuick" onsubmit="return confirm('確定判定 @Model.SideALabel 棄權？對手將直接獲勝。')">
+                        <input type="hidden" name="id" value="@Model.Battle.Id" />
+                        <input type="hidden" name="forfeitingPlayerId" value="@Model.Battle.PlayerAId" />
+                        <button class="btn btn-outline-danger w-100">@Model.SideALabel 棄權</button>
+                    </form>
+                </div>
+                <div class="col-6">
+                    <form method="post" asp-page-handler="ForfeitQuick" onsubmit="return confirm('確定判定 @Model.SideBLabel 棄權？對手將直接獲勝。')">
+                        <input type="hidden" name="id" value="@Model.Battle.Id" />
+                        <input type="hidden" name="forfeitingPlayerId" value="@Model.Battle.PlayerBId" />
+                        <button class="btn btn-outline-danger w-100">@Model.SideBLabel 棄權</button>
+                    </form>
+                </div>
+            </div>
+        }
+        @if (Model.CanCancelQuick)
+        {
+            <details>
+                <summary class="text-danger">取消整場快速對戰</summary>
+                <form method="post" asp-page-handler="CancelQuick" class="mt-2" onsubmit="return confirm('這會永久刪除整場資料且無法復原。確定取消？')">
+                    <input type="hidden" name="id" value="@Model.Battle.Id" />
+                    <div class="form-check mb-2">
+                        <input id="confirmCancellation" name="confirmCancellation" value="true" type="checkbox" class="form-check-input" required />
+                        <label for="confirmCancellation" class="form-check-label">我了解整場資料會永久刪除，且完全不列入統計</label>
+                    </div>
+                    <button class="btn btn-danger">永久取消對戰</button>
+                </form>
+            </details>
+        }
+    </section>
+}
 @if (Model.Battle.TournamentMatch?.Status == TournamentMatchStatus.ReorderSelection) { <div class="alert alert-info">本組已完成且尚未達勝分，等待雙方私密重排。</div><a asp-page="/Tournaments/Match" asp-route-id="@Model.Battle.TournamentMatchId" class="btn btn-primary mb-3">前往重排</a> }
+@if (Model.Battle.TournamentMatchId is not null && Model.Battle.Status == BattleStatus.InProgress) { <a asp-page="/Tournaments/Match" asp-route-id="@Model.Battle.TournamentMatchId" class="btn btn-outline-danger mb-3">返回對局／辦理棄權</a> }
+@if (Model.Battle.Status == BattleStatus.Voided && Model.SourceMatchId is int sourceMatchId) { <a asp-page="/Tournaments/Match" asp-route-id="@sourceMatchId" class="btn btn-primary mb-3">前往重開後的對局</a> }
 @if (Model.CurrentRound is not null) { <section class="card card-body mb-3"><h1 class="h4">Round @Model.CurrentRound.RoundNo：@Model.CurrentRound.PlayerADisplayNameSnapshot／@Model.CurrentRound.PlayerABeybladeNameSnapshot vs @Model.CurrentRound.PlayerBDisplayNameSnapshot／@Model.CurrentRound.PlayerBBeybladeNameSnapshot</h1><div class="small text-muted mb-3">@Model.CurrentRound.PlayerABeybladeNameSnapshot 失誤：@BeybladeRecordSystem.Domain.BattleRules.FaultCount(Model.CurrentRound.Events, Model.CurrentRound.PlayerAId!.Value)　@Model.CurrentRound.PlayerBBeybladeNameSnapshot 失誤：@BeybladeRecordSystem.Domain.BattleRules.FaultCount(Model.CurrentRound.Events, Model.CurrentRound.PlayerBId!.Value)</div>@if (Model.CanOperate && Model.Battle.Status == BattleStatus.InProgress) { <div class="row g-2 mb-3"><div class="col-6"><form method="post" asp-page-handler="Fault"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="playerId" value="@Model.CurrentRound.PlayerAId" /><button class="btn btn-outline-danger btn-lg w-100">@Model.CurrentRound.PlayerADisplayNameSnapshot 發射失誤</button></form></div><div class="col-6"><form method="post" asp-page-handler="Fault"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="playerId" value="@Model.CurrentRound.PlayerBId" /><button class="btn btn-outline-danger btn-lg w-100">@Model.CurrentRound.PlayerBDisplayNameSnapshot 發射失誤</button></form></div></div>@if (!Model.CurrentRound.Events.Any(x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult)) { <h2 class="h5">記錄勝負（點選得分方）</h2><div class="row g-2">@foreach (var player in new[] { (Model.CurrentRound.PlayerAId, Model.CurrentRound.PlayerADisplayNameSnapshot), (Model.CurrentRound.PlayerBId, Model.CurrentRound.PlayerBDisplayNameSnapshot) }) { <div class="col-6"><div class="d-grid gap-2">@foreach (var type in Enum.GetValues<ResultType>()) { <form method="post" asp-page-handler="Result"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="winnerPlayerId" value="@player.Item1" /><input type="hidden" name="resultType" value="@type" /><button class="btn btn-primary btn-lg">@player.Item2：@(type switch { ResultType.SpinFinish => "轉停 +1", ResultType.KnockOut => "擊飛 +2", ResultType.Burst => "爆裂 +2", _ => "極限 +3" })</button></form> }</div></div> }</div> } else { <form method="post" asp-page-handler="CompleteRound"><input type="hidden" name="id" value="@Model.Battle.Id" /><button class="btn btn-success btn-lg w-100 mt-3">完成此 Round</button></form> }}</section> }

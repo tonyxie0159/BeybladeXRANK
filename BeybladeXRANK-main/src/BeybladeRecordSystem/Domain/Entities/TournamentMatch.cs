@@ -38,5 +38,6 @@ public class TournamentMatch
     public TournamentMatch? WinnerToMatch { get; set; }
     public TournamentMatch? LoserToMatch { get; set; }
     public Battle? Battle { get; set; }
+    public ICollection<Battle> VoidedBattles { get; set; } = new List<Battle>();
     public ICollection<TournamentMatchParticipant> Participants { get; set; } = new List<TournamentMatchParticipant>();
 }

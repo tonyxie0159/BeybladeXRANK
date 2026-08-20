@@ -55,6 +55,32 @@ public class TournamentScheduleGeneratorTests
         Assert.DoesNotContain(schedule.Matches, x => x.IsSeedQualifier);
     }
 
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(8)]
+    public void ChampionPlayoff_UsesBalancedTopologicalSingleElimination(int entryCount)
+    {
+        var matches = TournamentScheduleGenerator.GenerateChampionPlayoff(
+            Enumerable.Range(1, entryCount),
+            randomSeed: 17);
+        var sequenceByMatchId = matches.ToDictionary(x => x.Id, x => x.SequenceNumber);
+
+        Assert.Equal(entryCount - 1, matches.Count);
+        Assert.Equal(Enumerable.Range(1, matches.Count), matches.Select(x => x.SequenceNumber));
+        Assert.All(matches, x => Assert.Equal(TournamentBracket.Playoff, x.Bracket));
+        Assert.Equal(Enumerable.Range(1, entryCount), matches
+            .SelectMany(x => new[] { x.SideA, x.SideB })
+            .Where(x => x.Kind == TournamentParticipantSourceKind.Entry)
+            .Select(x => x.ReferenceId).Order());
+        Assert.All(matches, match =>
+        {
+            AssertSourcePrecedesMatch(match.SideA, match.SequenceNumber, sequenceByMatchId);
+            AssertSourcePrecedesMatch(match.SideB, match.SequenceNumber, sequenceByMatchId);
+        });
+    }
+
     [Fact]
     public void FourEntryDoubleElimination_HasFixedLowerBracketAndConditionalResetFinal()
     {

@@ -32,10 +32,28 @@ namespace BeybladeRecordSystem.Migrations
                     b.Property<int>("CreatedByUserId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("LineupSequenceNo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PendingLineupEditRequestedByUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PlayerAEditRequestUsed")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("PlayerAId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("PlayerALineupConfirmed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PlayerBEditRequestUsed")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("PlayerBId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PlayerBLineupConfirmed")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("ScoreToWin")
@@ -67,6 +85,22 @@ namespace BeybladeRecordSystem.Migrations
                         .IsRequired()
                         .HasColumnType("BLOB");
 
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VoidSnapshot")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("VoidedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("VoidedByUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("VoidedTournamentMatchId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("WinningPlayerId")
                         .HasColumnType("INTEGER");
 
@@ -84,15 +118,21 @@ namespace BeybladeRecordSystem.Migrations
                     b.HasIndex("TournamentMatchId")
                         .IsUnique();
 
+                    b.HasIndex("VoidedByUserId");
+
+                    b.HasIndex("VoidedTournamentMatchId");
+
                     b.ToTable("Battles", t =>
                         {
                             t.HasCheckConstraint("CK_Battle_DifferentPlayers", "PlayerAId IS NULL OR PlayerBId IS NULL OR PlayerAId <> PlayerBId");
+
+                            t.HasCheckConstraint("CK_Battle_LineupSequenceNo", "LineupSequenceNo > 0");
 
                             t.HasCheckConstraint("CK_Battle_ScoreToWin", "ScoreToWin > 0");
 
                             t.HasCheckConstraint("CK_Battle_Scores", "SideAScore >= 0 AND SideBScore >= 0");
 
-                            t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND TournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND TournamentMatchId IS NOT NULL)");
+                            t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND Status <> 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND ((Status <> 7 AND TournamentMatchId IS NOT NULL AND VoidedTournamentMatchId IS NULL) OR (Status = 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NOT NULL AND VoidedByUserId IS NOT NULL AND VoidedAtUtc IS NOT NULL AND LENGTH(TRIM(VoidReason)) > 0 AND VoidSnapshot IS NOT NULL)))");
                         });
                 });
 
@@ -306,6 +346,9 @@ namespace BeybladeRecordSystem.Migrations
                     b.Property<int>("EventType")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("InvalidationReason")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsEffective")
                         .HasColumnType("INTEGER");
 
@@ -341,7 +384,15 @@ namespace BeybladeRecordSystem.Migrations
                     b.Property<int>("ChangedByUserId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("NewBattleSnapshot")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("NewEffectiveEventSnapshot")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PreviousBattleSnapshot")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -350,6 +401,7 @@ namespace BeybladeRecordSystem.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Reason")
+                        .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -439,6 +491,36 @@ namespace BeybladeRecordSystem.Migrations
                         .IsUnique();
 
                     b.ToTable("Beyblades");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.QuickBattleInvitation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("InviteeUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("InviterUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InviteeUserId", "CreatedAtUtc");
+
+                    b.HasIndex("InviterUserId", "InviteeUserId")
+                        .IsUnique();
+
+                    b.ToTable("QuickBattleInvitations");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Tournament", b =>
@@ -915,6 +997,16 @@ namespace BeybladeRecordSystem.Migrations
                         .HasForeignKey("BeybladeRecordSystem.Domain.Entities.Battle", "TournamentMatchId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.User", "VoidedByUser")
+                        .WithMany()
+                        .HasForeignKey("VoidedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.TournamentMatch", "VoidedTournamentMatch")
+                        .WithMany("VoidedBattles")
+                        .HasForeignKey("VoidedTournamentMatchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("CreatedByUser");
 
                     b.Navigation("PlayerA");
@@ -922,6 +1014,10 @@ namespace BeybladeRecordSystem.Migrations
                     b.Navigation("PlayerB");
 
                     b.Navigation("TournamentMatch");
+
+                    b.Navigation("VoidedByUser");
+
+                    b.Navigation("VoidedTournamentMatch");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BattleLineup", b =>
@@ -1099,6 +1195,25 @@ namespace BeybladeRecordSystem.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.QuickBattleInvitation", b =>
+                {
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.User", "InviteeUser")
+                        .WithMany()
+                        .HasForeignKey("InviteeUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.User", "InviterUser")
+                        .WithMany()
+                        .HasForeignKey("InviterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InviteeUser");
+
+                    b.Navigation("InviterUser");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Tournament", b =>
@@ -1308,6 +1423,8 @@ namespace BeybladeRecordSystem.Migrations
                     b.Navigation("Battle");
 
                     b.Navigation("Participants");
+
+                    b.Navigation("VoidedBattles");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.User", b =>

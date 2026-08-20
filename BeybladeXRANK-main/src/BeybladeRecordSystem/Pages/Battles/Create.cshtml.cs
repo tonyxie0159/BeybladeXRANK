@@ -10,39 +10,33 @@ using Microsoft.EntityFrameworkCore;
 namespace BeybladeRecordSystem.Pages.Battles;
 
 [Authorize]
-public class CreateModel(AppDbContext db, BattleService battleService) : PageModel
+public class CreateModel(AppDbContext db, QuickBattleFlowService quickBattleFlowService) : PageModel
 {
     public List<User> Opponents { get; private set; } = [];
-    public List<Beyblade> MyBeyblades { get; private set; } = [];
-    public List<Beyblade> OpponentBeyblades { get; private set; } = [];
-    [BindProperty(SupportsGet = true)] public int OpponentId { get; set; }
-    [BindProperty] public List<int> PlayerAIds { get; set; } = [];
-    [BindProperty] public List<int> PlayerBIds { get; set; } = [];
+    [BindProperty] public int OpponentId { get; set; }
 
-    public async Task<IActionResult> OnGetAsync(int? opponentId)
+    public async Task<IActionResult> OnGetAsync()
     {
-        await LoadAsync(opponentId);
+        await LoadAsync();
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
-        var currentUserId = User.GetRequiredUserId();
-        var draft = await battleService.CreateDraftAsync(currentUserId, OpponentId);
-        if (!draft.Succeeded) { await LoadAsync(OpponentId); ModelState.AddModelError(string.Empty, draft.Error!); return Page(); }
-        var lineup = await battleService.SetLineupAsync(draft.Value!.Id, currentUserId, PlayerAIds, PlayerBIds);
-        if (!lineup.Succeeded) { await LoadAsync(OpponentId); ModelState.AddModelError(string.Empty, lineup.Error!); return Page(); }
-        var locked = await battleService.LockLineupAsync(draft.Value.Id, currentUserId);
-        if (!locked.Succeeded) { await LoadAsync(OpponentId); ModelState.AddModelError(string.Empty, locked.Error!); return Page(); }
-        return RedirectToPage("Details", new { id = draft.Value.Id });
+        var result = await quickBattleFlowService.SendInvitationAsync(User.GetRequiredUserId(), OpponentId);
+        if (!result.Succeeded)
+        {
+            await LoadAsync();
+            ModelState.AddModelError(string.Empty, result.Error!);
+            return Page();
+        }
+        TempData["Success"] = "快速對戰邀請已送出。";
+        return RedirectToPage("Invitations");
     }
 
-    private async Task LoadAsync(int? opponentId)
+    private async Task LoadAsync()
     {
         var currentUserId = User.GetRequiredUserId();
         Opponents = await db.Users.Where(x => x.Id != currentUserId).OrderBy(x => x.DisplayName).ToListAsync();
-        MyBeyblades = await db.Beyblades.Where(x => x.UserId == currentUserId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync();
-        if (opponentId is > 0 && opponentId != currentUserId)
-            OpponentBeyblades = await db.Beyblades.Where(x => x.UserId == opponentId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync();
     }
 }

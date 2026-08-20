@@ -1,65 +1,59 @@
 # 產品需求規格
 
-## 1. 帳號
+本文件定義全產品共通需求。快速對戰的完整狀態見 `04-Battle-Rules/state-machine.md`；Tournament 模式、賽制與團體對戰細節見 `11-Tournament-Schedule/tournament-schedule.md`。
+
+## 1. 帳號與所有權
 
 每位使用者具有：
 
-- Account：唯一且不可用 Display Name 取代。
-- PasswordHash：不可儲存明文密碼。
-- DisplayName：可隨時修改。
+- `Account`：唯一、不可修改的登入識別。
+- `PasswordHash`：只保存 ASP.NET Core PasswordHasher 產生的雜湊，不保存明文。
+- `DisplayName`：可修改的顯示名稱，不作為資料所有權或唯一識別。
 
-Account 是資料關聯識別依據，DisplayName 僅是顯示資訊。
+使用者只能管理自己的帳號顯示名稱、Beyblade、Battle 操作及統計查詢範圍。所有 PageModel 與 Service 都必須重新驗證登入者、資源所有權及目前狀態，不信任 hidden field、route 或 query string。
 
 ## 2. 陀螺
 
-使用者可以：
+使用者可以查看、新增、改名及刪除自己的陀螺。
 
-- 新增陀螺。
-- 修改陀螺名稱。
-- 查看自己的陀螺。
-- 刪除尚未被歷史資料依賴的陀螺，或依實作採用軟刪除以維持歷史資料完整性。
+現行資料保存規則：
 
-限制：
+- 同一 User 的 Name 不可重複，不同 User 可以同名。
+- `BeybladeId` 是固定配置的識別；實際配置改變時建立新 Beyblade，只有顯示名稱修正使用 Rename。
+- Delete 採軟刪除，避免破壞既有 Battle、Lineup 與 Round。
+- 軟刪除後不出現在新 Lineup 選擇清單，但歷史資料仍可依 Id 與 Snapshot 顯示。
+- BattleLineup 與 BattleRound 保存玩家及陀螺顯示名稱 Snapshot。
 
-- 同一 User 的 Name 不可重複。
-- 不同 User 可以重複。
-- 陀螺的 Id 是真正識別碼。
-- 歷史對戰保存 BeybladeNameSnapshot。
+## 3. 快速對戰建立流程
 
-## 3. 建立對戰
+1. 發起人選擇不同於自己的玩家並建立 `QuickBattleInvitation`。
+2. 接受邀請前不得建立 Battle；拒絕或撤回時硬刪除 invitation，不建立 Rejected／Cancelled Battle。
+3. 接受時在同一交易建立 `Battle(SourceType = Quick, ScoreToWin = 4)` 並刪除 invitation。
+4. 雙方各自在自己的帳號私密選擇三顆不同陀螺及 1、2、3 順位，任一方不得替另一方提交。
+5. 雙方都提交後才同時公開。雙方各自確認，或每人每個 Lineup 版本至多提出一次重新編輯請求。
+6. 接受重新編輯時建立下一個 `SequenceNo` 並使雙方重新提交；拒絕時維持原版本，提出者不得在同版本再次要求。
+7. 雙方確認後物化並鎖定 BattleLineup，由發起人以臨時裁判身分明確指定資料 Side A 為 B Side 或 X Side，再開始對戰。
 
-1. 發起人選擇一名不同於自己的對手並送出站內邀請。
-2. 對手接受後，雙方各自在自己的帳號選擇三顆陀螺及 1、2、3 順位；任一方不得替另一方設定。
-3. 雙方都提交前，不公開任何一方的陀螺或順位；雙方都提交後才同時公開。
-4. 雙方檢查陣容並各自確認。每一版陣容中，每一方最多可提出一次重新編輯請求。
-5. 對方接受重新編輯時，雙方的提交與確認一併失效並回到選擇階段；拒絕時維持原陣容，提出者不得就同一版再次要求。
-6. 雙方確認後鎖定陣容，由發起人以臨時裁判身分指定一方為 B Side（藍色）、另一方為 X Side（紅色），再開始對戰。
-7. 開始對戰後不可返回賽前階段，發起人負責裁判操作。
+站內通知、待處理邀請、準備中與進行中的快速對戰都必須有可返回入口。流程狀態、私密提交、比分、Round、Event 與 fault count 全部保存於後端；刷新、登出或瀏覽其他頁面不得重建或重置 Battle。
 
-同一場 Battle 中，每位玩家必須使用三顆不同陀螺。
+## 4. Battle 共通模型
 
-快速對戰由發起人送出站內邀請。尚未接受的邀請可由發起人撤回；對手拒絕或發起人撤回時，直接硬刪除邀請及尚未使用的相關資料，不建立 Battle、Rejected 或 Cancelled 紀錄。
+- `Player A/B` 表示資料中的配對方向，不等於 B／X Side。
+- `SideADesignation` 表示 Side A 的正式站位；另一側為相反站位。
+- 比分使用 `SideAScore`／`SideBScore`。
+- 快速對戰 `ScoreToWin = 4`；Tournament Battle 使用 Tournament 建立時鎖定的門檻。
+- 開始後 Side、參賽者、首次陀螺集合與賽前資料不可任意修改。
 
-通知採站內通知與待處理邀請清單，不做手機系統推播。各流程頁定時輪詢狀態並提供手動刷新。對戰與已提交陣容必須持久化；玩家可離開選擇頁新增個人陀螺，再以相同 BattleId 返回、刷新清單並繼續，不得重建或重置對戰。
+當前 Lineup 依 Position 順序產生 Round。快速對戰固定三個 Position；Tournament 依 RuleSet 產生所需實際玩家／陀螺配對。
 
-## 4. 對戰
+一組 Position 全部完成且雙方仍未達門檻時：
 
-固定依當前陣容順位進行：
+- 雙方各自私密重排首次鎖定的陀螺，不可更換。
+- 團體 Battle 另由代表人私密重排本隊出戰者順序。
+- 全部必要提交完成後直接物化新 `SequenceNo`，不再進行 LineupReview。
+- 累積比分與舊 Lineup／Round 歷史保留。
 
-- 1 號 vs 1 號
-- 2 號 vs 2 號
-- 3 號 vs 3 號
-
-三局完成後：
-
-- 若任一方尚未達 4 分，可重新排列原本三顆陀螺。
-- 不可更換陀螺。
-- 分數不歸零。
-- 新順位繼續進行。
-
-重新排列由雙方各自在自己的帳號操作，預設帶入上一版順序。雙方都提交前保持保密；都提交後直接生效，不再進行陣容審核。
-
-## 5. 勝利方式
+## 5. 計分與發射失誤
 
 | ResultType | 中文名稱 | 分數 |
 |---|---|---:|
@@ -68,59 +62,62 @@ Account 是資料關聯識別依據，DisplayName 僅是顯示資訊。
 | Burst | 爆裂勝利 | 2 |
 | Extreme | 極限勝利 | 3 |
 
-任一方累積分數 >= 4 時，達成勝利條件。
+Client 只提交事件意圖；`ScoreAwarded`、累積比分、Round 狀態與 Battle 狀態由 Server 決定。
 
-注意：達成條件不代表資料立即鎖定。建立者必須按「對戰結束」。
+對同一 Round、同一顆陀螺：
 
-## 6. 發射失誤
+- 第一次有效 LaunchFault 不得分。
+- 第二次有效 LaunchFault 建立 `LaunchFaultPenalty`，對手得 1 分，該顆陀螺的 fault count 歸零。
+- LaunchFault 與 LaunchFaultPenalty 都不會自行完成 Round；正常完成仍需一個有效 BattleResult。
+- fault count 從有效事件重建，不另存可漂移的計數欄位。
 
-發射失誤不是 BattleRound 結束。
+每次有效得分後立即檢查 `ScoreToWin`。達標時進入 `VictoryPendingCompletion`，禁止新增後續正常得分；授權裁判檢查後明確完成 Battle。
 
-對同一顆陀螺：
+## 6. 棄權、取消、撤銷與修正
 
-- 第一次失誤：fault count +1。
-- 第二次失誤：對手 +1 分。
-- 該陀螺 fault count 歸零。
-- 同一顆陀螺繼續進行。
-- 該失分事件必須記錄為 LaunchFaultPenalty。
-- 該分數必須計入陀螺失分與玩家因發射失誤造成的歷史失分。
+### 快速對戰
 
-例如：
+- 發起人可在進行中指定棄權玩家；另一方成為勝者，不要求達到 4 分。
+- 已完成 Round 保留並計入戰績；當下未完成 Round 的事件失效。
+- 取消須二次確認並在單一交易硬刪除整個 Battle aggregate，不保留 Cancelled 紀錄，也不進入統計。
 
-A 的陀螺轉停勝利 +1。
-A 該局又發生兩次發射失誤，B 因此 +1。
-則：
-- A 陀螺該局得分 = 1
-- A 陀螺該局失分 = 1
-- A 玩家因發射失誤失分 = 1
-- 該局總比分依所有有效事件計算。
+### Tournament
 
-## 7. 對戰結束
+- 賽前拒絕、未到或棄權產生 Walkover，不建立虛構比分 Battle。
+- 進行中棄權保留已完成 Round，排除未完成 Round 事件，整個 Entry 判負。
+- 取消整個 Tournament 保留規則、報名、賽程、已完成 Battle／Round 與原因；未完成資料進入 Cancelled 終止狀態並排除統計。
+- 主辦方撤銷本場並重開時，舊 Battle 進入 Voided 且保留操作者、時間、原因與快照；替代 Battle 必須重新通知與選螺。
 
-當某方達成 >=4 分：
+### Revision
 
-- UI 顯示「已達勝利條件」。
-- 不自動結束。
-- 建立者可檢查紀錄。
-- 建立者按「對戰結束」。
-- 後端驗證已達勝利條件。
-- 成功後 Battle 狀態改為 Completed。
-- Completed 後禁止一般修改。
+- 可查看指定 Round 的全部有效／無效事件並重新指定唯一有效 BattleResult。
+- Reason 必填；保存 Round 與全場修改前後快照。
+- 從最早受影響事件重播整場；首次達門檻後的事件失效，需要時可恢復原本被門檻截斷的事件。
+- Tournament 上游勝方變更必須依下游狀態重建、取得明確撤銷確認或阻擋修改。
 
-裁判可在對戰中判定一方棄權，Battle 進入 Forfeited 終止狀態，另一方記為勝者。棄權前已完成的 Round 仍納入玩家與陀螺戰績；棄權當下尚未完成 Round 的所有事件均不納入戰績。
+## 7. Tournament
 
-裁判也可取消進行中的對戰。取消後整個 Battle aggregate 直接硬刪除，該場所有 Round 與事件均不納入戰績，不建立 Cancelled 紀錄。刪除必須在單一資料庫交易內完成，並在 UI 提供明確二次確認。
+產品支援：
 
-## 8. 判決修改
+- 單人賽、雙人團體、三人團體。
+- 整隊報名及個人報名後系統配隊；隊伍只存在於該 Tournament，不建立永久 Team。
+- 單淘汰、雙敗、單循環與瑞士輪。
+- 每場新 Tournament Match 重新選螺；同一 Battle 內重排不得換螺。
+- 主辦方邀請、報名重開、未到場手動判定、賽程觀戰、同分加賽及正式名次均屬有效需求。
 
-修改功能針對「一個 BattleRound」：
+上述完整規則及操作上限以 `11-Tournament-Schedule/tournament-schedule.md` 為準。
 
-- 可查看該局全部事件。
-- 可移除／修正該局的勝負結果。
-- 可重新指定勝者與 ResultType。
-- 需要重新計算該局分數。
-- 需要重新計算整場 Battle 累積分數。
-- 需要重新判斷是否達到 >=4。
-- 需要重新計算相關戰績。
+## 8. 戰績
 
-修改應留下 Revision Audit，避免歷史完全消失。
+- 玩家主戰績分成快速對戰、Tournament 個人、Tournament 團體隊伍結果及團體實際小局，不合成單一主要勝率。
+- 陀螺戰績預設合併有效來源，並可依來源篩選。
+- 個人與陀螺都可依全部／B Side／X Side 重新聚合，並依勝率、得分、失分、得失分差、B Side 勝率與 X Side 勝率排序。
+- 對戰歷史顯示來源及當場 Side；未保存 Side 的相容資料不得推測。
+- 不建立冗餘 Statistics Table 或全域強弱排行榜。
+
+## 9. 執行與部署
+
+- SQLite、Data Protection keys 與其他 runtime data 保存於 Git 忽略的 `data/`。
+- 本機及 Docker 使用 8080；Docker 將 `/app/data` bind mount 到主機 `data/`。
+- Cloudflare Tunnel 由主機側連到 `http://localhost:8080`；正式公開前必須完成 forwarded headers、Secure Cookie 與實機連線驗收。
+- Quick Tunnel 只用於開發／短期分享，不宣稱正式 SLA。

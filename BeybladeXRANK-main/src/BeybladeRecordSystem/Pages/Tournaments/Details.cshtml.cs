@@ -2,6 +2,7 @@ using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
 using BeybladeRecordSystem.Infrastructure;
 using BeybladeRecordSystem.Services;
+using BeybladeRecordSystem.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -9,24 +10,42 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace BeybladeRecordSystem.Pages.Tournaments;
 
 [Authorize]
-public class DetailsModel(TournamentService tournamentService, TournamentMatchService matchService) : PageModel
+public class DetailsModel(TournamentService tournamentService, TournamentMatchService matchService, TournamentStandingsService standingsService) : PageModel
 {
     public Tournament Tournament { get; private set; } = null!;
+    public TournamentPublicDetailsViewModel PublicDetails { get; private set; } = null!;
     public bool IsOrganizer { get; private set; }
     public bool IsRegistered { get; private set; }
     public bool CanRegister { get; private set; }
+    public bool CanReopenRegistration => IsOrganizer &&
+        Tournament.Status == TournamentStatus.RegistrationOpen &&
+        Tournament.RegistrationStage is TournamentRegistrationStage.Closed or
+            TournamentRegistrationStage.AwaitingTeamFormation or
+            TournamentRegistrationStage.ScheduleDraftCreated;
+    public TournamentInvitation? ParticipantInvitation { get; private set; }
     public bool IsSystemPairingRegistered { get; private set; }
     public IReadOnlyList<TournamentEntry> SystemPairingEntries { get; private set; } = [];
     public TournamentTeamWorkspace TeamWorkspace { get; private set; } = new(null, [], []);
     public IReadOnlyList<TournamentMatchAction> ActionMatches { get; private set; } = [];
+    public IReadOnlyList<TournamentStandingRow> Standings { get; private set; } = [];
     [BindProperty] public string? TeamName { get; set; }
     [BindProperty] public string InvitePlayer { get; set; } = string.Empty;
+    [BindProperty] public string InviteParticipant { get; set; } = string.Empty;
     [BindProperty] public int NewRepresentativeId { get; set; }
     [BindProperty] public int FirstMemberId { get; set; }
     [BindProperty] public int SecondMemberId { get; set; }
     [BindProperty] public List<int> OrderedEntryIds { get; set; } = [];
+    [BindProperty] public string? CancellationReason { get; set; }
 
     public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
+
+    public async Task<IActionResult> OnGetPollAsync(int id)
+    {
+        var details = await tournamentService.GetPublicDetailsAsync(id, User.GetRequiredUserId());
+        return details is null
+            ? NotFound()
+            : new JsonResult(new { token = details.PollToken, status = details.Status.ToString() });
+    }
 
     public async Task<IActionResult> OnPostRegisterAsync(int id)
     {
@@ -119,10 +138,10 @@ public class DetailsModel(TournamentService tournamentService, TournamentMatchSe
         return RedirectToPage(new { id });
     }
 
-    public async Task<IActionResult> OnPostReopenPairingAsync(int id)
+    public async Task<IActionResult> OnPostReopenRegistrationAsync(int id)
     {
-        var result = await tournamentService.ReopenSystemPairingRegistrationAsync(id, User.GetRequiredUserId());
-        TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded ? "配隊登記已重新開放。" : result.Error;
+        var result = await tournamentService.ReopenRegistrationAsync(id, User.GetRequiredUserId());
+        TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded ? "報名已重新開放。" : result.Error;
         return RedirectToPage(new { id });
     }
 
@@ -161,19 +180,55 @@ public class DetailsModel(TournamentService tournamentService, TournamentMatchSe
         return RedirectToPage(new { id });
     }
 
+    public async Task<IActionResult> OnPostInviteParticipantAsync(int id)
+    {
+        var result = await tournamentService.InviteParticipantAsync(
+            id, User.GetRequiredUserId(), InviteParticipant);
+        TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded
+            ? "參賽邀請已送出。"
+            : result.Error;
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostRespondParticipantInvitationAsync(
+        int id,
+        int invitationId,
+        bool accept)
+    {
+        var result = await tournamentService.RespondToTournamentInvitationAsync(
+            invitationId, User.GetRequiredUserId(), accept);
+        TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded
+            ? accept ? "已接受參賽邀請並完成報名。" : "已拒絕參賽邀請。"
+            : result.Error;
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostCancelTournamentAsync(int id)
+    {
+        var result = await tournamentService.CancelTournamentAsync(id, User.GetRequiredUserId(), CancellationReason);
+        TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded ? "整場比賽已取消；已完成的對局與回合資料仍會保留。" : result.Error;
+        return RedirectToPage(new { id });
+    }
+
     private async Task<bool> LoadAsync(int id)
     {
+        var userId = User.GetRequiredUserId();
+        var publicDetails = await tournamentService.GetPublicDetailsAsync(id, userId);
+        if (publicDetails is null) return false;
         var tournament = await tournamentService.GetDetailsAsync(id);
         if (tournament is null) return false;
+        PublicDetails = publicDetails;
         Tournament = tournament;
-        var userId = User.GetRequiredUserId();
         IsOrganizer = tournament.OrganizerUserId == userId;
         ActionMatches = await matchService.GetActionableAsync(id, userId);
+        Standings = await standingsService.GetStandingsAsync(id);
         IsRegistered = tournament.Entries.Any(x => x.Status == TournamentEntryStatus.Registered &&
             (x.IndividualUserId == userId || x.Members.Any(m => m.UserId == userId)));
         CanRegister = tournament.Status == TournamentStatus.RegistrationOpen &&
             tournament.RegistrationStage == TournamentRegistrationStage.Open &&
             tournament.Mode == TournamentMode.Individual && !IsRegistered;
+        if (tournament.Mode == TournamentMode.Individual)
+            ParticipantInvitation = await tournamentService.GetPendingParticipantInvitationAsync(id, userId);
         if (tournament.Mode == TournamentMode.Team)
         {
             TeamWorkspace = await tournamentService.GetTeamWorkspaceAsync(id, userId);

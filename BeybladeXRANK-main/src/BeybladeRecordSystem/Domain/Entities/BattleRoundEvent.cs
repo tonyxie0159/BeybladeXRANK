@@ -13,6 +13,7 @@ public class BattleRoundEvent
     public ResultType? ResultType { get; set; }
     public int ScoreAwarded { get; set; }
     public bool IsEffective { get; set; } = true;
+    public BattleRoundEventInvalidationReason? InvalidationReason { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public BattleRound BattleRound { get; set; } = null!;
 }

@@ -9,6 +9,7 @@ public class Battle
     public BattleSourceType SourceType { get; set; } = BattleSourceType.Quick;
     public int ScoreToWin { get; set; } = 4;
     public int? TournamentMatchId { get; set; }
+    public int? VoidedTournamentMatchId { get; set; }
     public int? PlayerAId { get; set; }
     public int? PlayerBId { get; set; }
     public int CreatedByUserId { get; set; }
@@ -18,14 +19,26 @@ public class Battle
     public BattleSide? SideADesignation { get; set; }
     public BattleSide? WinningSide { get; set; }
     public int? WinningPlayerId { get; set; }
+    public int LineupSequenceNo { get; set; } = 1;
+    public bool PlayerALineupConfirmed { get; set; }
+    public bool PlayerBLineupConfirmed { get; set; }
+    public bool PlayerAEditRequestUsed { get; set; }
+    public bool PlayerBEditRequestUsed { get; set; }
+    public int? PendingLineupEditRequestedByUserId { get; set; }
+    public int? VoidedByUserId { get; set; }
+    public string? VoidReason { get; set; }
+    public string? VoidSnapshot { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
+    public DateTime? VoidedAtUtc { get; set; }
     public byte[] Version { get; set; } = Array.Empty<byte>();
     public User PlayerA { get; set; } = null!;
     public User PlayerB { get; set; } = null!;
     public User CreatedByUser { get; set; } = null!;
+    public User? VoidedByUser { get; set; }
     public TournamentMatch? TournamentMatch { get; set; }
+    public TournamentMatch? VoidedTournamentMatch { get; set; }
     public ICollection<BattleLineup> Lineups { get; set; } = new List<BattleLineup>();
     public ICollection<BattleLineupSelection> LineupSelections { get; set; } = new List<BattleLineupSelection>();
     public ICollection<BattleTeamOrderSelection> TeamOrderSelections { get; set; } = new List<BattleTeamOrderSelection>();

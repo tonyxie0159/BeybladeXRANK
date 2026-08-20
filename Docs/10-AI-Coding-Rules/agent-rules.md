@@ -1,184 +1,162 @@
 # AI Coding Agent 強制規則
 
-這份文件優先級高於 AI Agent 自己的架構偏好。
+本文件約束所有程式與文件變更。產品規則以 Docs/README.md 定義的文件順序解讀；Agent 不得以自己的架構偏好、舊程式碼或暫時缺功能覆寫有效規格。
 
 ## Scope Lock
 
-只實作需求文件列出的功能。
+只實作有效文件與目前明確開發 Phase 內的功能。除非使用者另行核准，不加入：
 
-禁止自行加入：
+- 好友、聊天、社群、公開玩家目錄或永久社群 Team。
+- 排行榜、賽季、配對分、Elo 或其他未規範的強弱評分。
+- OAuth、Google Login、Email、手機推播。
+- QR Code、PWA 離線、WebSocket、SignalR。
+- React、Vue、Blazor 或其他 SPA。
+- Microservices、Redis、獨立 REST API、獨立 DB container。
+- PostgreSQL、SQL Server、Admin Portal 或完整角色權限系統。
+- 陀螺圖片／零件資料庫、第三方分析、自動雲端部署。
 
-- 好友
-- 聊天
-- 排行榜
-- 社群
-- 團隊
-- 公開玩家搜尋
-- OAuth
-- Google Login
-- Email
-- 推播
-- QR Code
-- PWA 離線
-- WebSocket
-- SignalR 即時對戰
-- React
-- Vue
-- Blazor
-- Microservices
-- Redis
-- PostgreSQL
-- SQL Server
-- 獨立 API 專案
-- 獨立 DB Container
-- Admin Portal
-- 權限角色系統（需求沒有提出時）
-- 陀螺圖片／零件資料庫
-- 第三方分析工具
-- 自動雲端部署
-
-除非使用者後續明確要求，禁止加入。
+Tournament-scoped 雙人／三人臨時隊伍是已核准功能，不受「永久社群 Team」禁令限制；不得把它擴張成跨 Tournament 保存的 Team。
 
 ## Architecture Lock
 
-使用：
+固定使用：
 
-- ASP.NET Core
-- Razor Pages
-- Bootstrap
-- Vanilla JS
-- EF Core
-- SQLite
-- Docker
-- Cloudflare Tunnel
+- ASP.NET Core Razor Pages
+- Bootstrap、必要的 Vanilla JavaScript
+- EF Core + SQLite
+- Docker 單一 Web container
+- 主機側 Cloudflare Tunnel
 
-不要因為「未來可能擴充」改成其他架構。
+不得為了「未來可能擴充」增加未需求的抽象或基礎設施。
 
-## Backend Rule
+## Canonical Battle Flow
 
-所有：
+- QuickBattleInvitation 與 Battle 是不同 aggregate；接受前不可建立 Battle。
+- 快速賽前、雙方私密 Lineup、確認、edit request 與私密 Reorder 經 QuickBattleFlowService。
+- BattleService 只負責已建立 Battle 的 Side、開始、事件、Round、Finish、棄權／取消、Revision 與授權讀取。
+- 新程式不得呼叫 CreateDraftAsync、SetLineupAsync、LockLineupAsync 或 CreateReorderedLineupAsync 舊契約。
+- Player A/B 是資料方向；B／X 是 SideADesignation，不能用玩家 Id 欄位重建舊 BSidePlayerId／XSidePlayerId 模型。
 
-- 得分
-- 勝負
-- 發射失誤
-- 4 分條件
-- Round 完成
-- Reorder
-- Revision
-- Battle 完成
+## Server Authority
 
-都由 Server 判斷。
+Server 唯一決定：
 
-Client 不能送任意 Score。
+- ResultType 對應分數。
+- LaunchFault／LaunchFaultPenalty 與 fault count。
+- SideAScore／SideBScore。
+- Battle-specific ScoreToWin 與 VictoryPendingCompletion。
+- Round 完成、Lineup Sequence、Reorder 合法性。
+- WinningSide／WinningPlayer／WinnerEntry／LoserEntry。
+- Tournament 配對、Bye、Walkover、下一場與排名。
+- Revision replay、事件失效、下游撤銷與統計排除。
+
+Client 不可提交任意 Score、整場比分、ScoreToWin、WinningSide、隊伍歸屬、晉級者或下一場 Entry。
 
 ## Data Integrity
 
-不要因為 UI 簡單而犧牲：
+不得因 UI 簡單而犧牲：
 
-- FK
-- Unique constraint
-- Authorization
-- Battle state validation
-- Transaction
-- Concurrency protection（在可能造成雙重提交的操作上）
+- FK、unique index、check constraint。
+- 使用者及 aggregate ownership。
+- 私密 Lineup 與 Account 隱私。
+- Battle／Tournament／Match state validation。
+- transaction 與 concurrency protection。
+- Snapshot 與 Revision／Void audit。
+- migration upgrade path。
 
-## Revision Rule
+最後名額、完成 Battle 並推進 Match、棄權、取消、Void／Reopen 與 Revision 必須考慮重複請求和並行操作。
 
-修改 Round 不可只修改畫面。
+## Statistics
 
-必須：
+- 不建立 Statistics Table 或 cache。
+- 只聚合規格允許的 Battle、完成 Round 與有效 Event。
+- 快速、個人、團體隊伍結果、團體實際小局分開。
+- B／X Side 從 SideADesignation 與 Player／Entry A/B 推導；沒有 Side 的相容資料不得猜測。
+- 來源／Side 篩選後在 Server 重新聚合。
+- 不建立全域強弱排行榜。
 
-1. 讀取完整 Round。
-2. 保存 Revision。
-3. 重建該 Round 有效結果。
-4. 重新計算 Battle。
-5. 重新計算統計。
+## Revision／Cancellation
 
-## No Premature Optimization
+Revision 必須：
 
-不要：
+1. 驗證操作者、Battle、Round 與 Tournament 下游狀態。
+2. 要求原因。
+3. 保存 Round 及 Battle 修改前快照。
+4. 重建有效 BattleResult。
+5. 從最早受影響事件重播比分與狀態。
+6. 保存修改後快照。
+7. 使統計立即反映有效資料。
 
-- 建 Statistics Table。
-- 建 cache。
-- 建 event bus。
-- 建 repository abstraction 只為了形式。
-- 建 generic CRUD framework。
-- 建複雜 domain event infrastructure。
+快速取消交易式硬刪除；Tournament 取消保留完成歷史；Tournament Void 保留 audit 且完全排除原 Battle。三者不得共用錯誤的資料保存策略。
 
-除非實作真的需要。
+## Privacy／Authorization
+
+- 所有需要登入的 Page 使用 Authorize。
+- PageModel 使用目前登入者 Id，不綁定 Client 提交的 owner userId。
+- Service 再驗證使用者是否為擁有者、參賽者、代表人或主辦方。
+- 公開 Tournament read model 與私密 Match workspace 分離。
+- Lineup 未完成共同提交前，不向對手或觀眾公開。
+- Account 只用於登入及精確邀請搜尋，不顯示在公開頁。
+
+## UI
+
+- 手機優先、按鈕可觸控、文字與顏色共同傳達狀態。
+- 重要裁判操作不可藏在 dropdown。
+- 達 ScoreToWin 顯示明確提示，不自動 Completed。
+- 待處理／active Battle 有可發現返回入口。
+- polling 只執行 GET／狀態刷新，不自動 POST。
+- 取消、棄權、No-show、Void 及下游撤銷需要清楚影響說明與確認。
+
+## No Premature Abstraction
+
+不要建立：
+
+- generic repository／unit of work 只為形式。
+- generic CRUD framework。
+- event bus、複雜 domain event infrastructure。
+- 未需求 cache、backup service 或 deployment platform。
+
+純 Domain schedule generator、Application Service 與專用 read model 是現行架構的一部分，不屬於過度抽象。
 
 ## Development Discipline
 
-每一階段：
+1. 開始前確認 branch 為 codex/*，不在 main 開發。
+2. 一個 PR 只處理一個 coherent change，先開 draft。
+3. 保留使用者既有 dirty worktree，不覆寫無關變更。
+4. 先寫或更新 focused regression test，再完成 Service／UI。
+5. 有 migration 時驗證 upgrade 與 model snapshot。
+6. 執行完整 dotnet test。
+7. 更新 acceptance-tests.md 與 development-plan.md。
+8. 檢查文件沒有重新引入 Docs/README.md 列出的淘汰規格。
 
-1. Build。
-2. Unit Test。
-3. 修正。
-4. 才進下一階段。
+測試失敗不得先忽略並繼續堆功能。
 
-如果測試失敗，不得用「先忽略」方式繼續堆功能。
+## Ambiguity
 
-## Ambiguity Rule
+若有效文件無法推導：
 
-需求無法明確推導時：
+- 不猜測或保留兩套互斥流程。
+- 列出衝突、資料影響與可選方案。
+- 等使用者確認後，刪除被淘汰方案並同步所有文件。
 
-- 不猜。
-- 不自行新增規則。
-- 列出問題。
-- 等使用者確認。
+## Deployment
 
-## UI Rule
+最終需能使用：
 
-手機優先。
-
-裁判操作最重要。
-
-按鈕要大。
-
-避免把重要操作藏在 dropdown。
-
-達成 >=4 後要顯示明確狀態，但不可自動 Completed。
-
-## Delivery Rule
-
-最後必須能：
-
-```text
-docker compose up -d
+```powershell
+docker compose up -d --build
 ```
 
-啟動。
+並在 localhost:8080 使用。SQLite 與 Data Protection keys 必須在 data/ 持久化。Cloudflare Tunnel 由主機側提供；外部 HTTPS 上線前驗證 forwarded headers、可信 proxy 與 Secure Cookie。
 
-並能：
+## 完成定義
 
-```text
-http://localhost:8080
-```
+MVP 完成必須同時具備：
 
-使用。
-
-Cloudflare Tunnel 由主機側提供。
-
-## Completion Definition
-
-只有以下全部完成才算 MVP 完成：
-
-- Account
-- Login
-- DisplayName
-- Beyblade CRUD
-- Battle setup
-- Lineup lock
-- Battle scoring
-- Launch fault
-- Reorder
-- Finish Battle
-- Round revision
-- User statistics
-- Beyblade statistics
-- Opponent statistics
-- Sorting
-- Docker
-- SQLite persistence
-- Cloudflare Tunnel instructions
-- Acceptance tests
+- Account／Beyblade。
+- 快速邀請、私密 Lineup、B／X Side、計分、Reorder、Finish、Revision、棄權／取消及 active return。
+- Tournament 建立、邀請、報名／重開、整隊／配隊、四種賽制、多種 RuleSet、No-show、取消／Void、完整公開賽程及 polling。
+- 單淘汰／雙敗名次與規範要求的循環／瑞士加賽。
+- 來源與 B／X Side 玩家／陀螺／對手／歷史統計。
+- concurrency、HTTP／authorization、手機 UI、Docker／SQLite／Cloudflare 驗收證據。
+- 所有有效文件與程式一致，完整測試通過。

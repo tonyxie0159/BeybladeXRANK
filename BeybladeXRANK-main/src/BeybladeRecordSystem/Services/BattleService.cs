@@ -2,6 +2,7 @@ using BeybladeRecordSystem.Data;
 using BeybladeRecordSystem.Domain;
 using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
+using BeybladeRecordSystem.Domain.Tournaments;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -9,83 +10,6 @@ namespace BeybladeRecordSystem.Services;
 
 public class BattleService(AppDbContext db)
 {
-    public async Task<ServiceResult<Battle>> CreateDraftAsync(int creatorId, int opponentId)
-    {
-        if (creatorId == opponentId) return ServiceResult<Battle>.Failure("不可與自己對戰。");
-        if (!await db.Users.AnyAsync(x => x.Id == creatorId) || !await db.Users.AnyAsync(x => x.Id == opponentId))
-            return ServiceResult<Battle>.Failure("找不到指定的玩家。");
-
-        var battle = new Battle
-        {
-            SourceType = BattleSourceType.Quick,
-            ScoreToWin = 4,
-            PlayerAId = creatorId,
-            PlayerBId = opponentId,
-            SideADesignation = BattleSide.B,
-            CreatedByUserId = creatorId,
-            Status = BattleStatus.Draft,
-            CreatedAtUtc = DateTime.UtcNow,
-            Version = Guid.NewGuid().ToByteArray()
-        };
-        db.Battles.Add(battle);
-        await db.SaveChangesAsync();
-        return ServiceResult<Battle>.Success(battle);
-    }
-
-    public async Task<ServiceResult> SetLineupAsync(int battleId, int creatorId, IReadOnlyList<int> playerASelection, IReadOnlyList<int> playerBSelection)
-    {
-        var battle = await db.Battles.Include(x => x.PlayerA).Include(x => x.PlayerB).Include(x => x.Lineups).SingleOrDefaultAsync(x => x.Id == battleId);
-        if (battle is null) return ServiceResult.Failure("找不到對戰。");
-        if (battle.CreatedByUserId != creatorId) return ServiceResult.Failure("只有建立者可設定陣容。");
-        if (battle.Status != BattleStatus.Draft) return ServiceResult.Failure("陣容已鎖定，不能更換陀螺。");
-        if (!IsValidSelection(playerASelection) || !IsValidSelection(playerBSelection)) return ServiceResult.Failure("雙方必須各選三顆不同的陀螺。");
-
-        var selectedIds = playerASelection.Concat(playerBSelection).ToArray();
-        var blades = await db.Beyblades.Where(x => selectedIds.Contains(x.Id) && !x.IsDeleted).ToDictionaryAsync(x => x.Id);
-        if (blades.Count != 6 || playerASelection.Any(x => !blades.TryGetValue(x, out var blade) || blade.UserId != battle.PlayerAId) || playerBSelection.Any(x => !blades.TryGetValue(x, out var blade) || blade.UserId != battle.PlayerBId))
-            return ServiceResult.Failure("所選陀螺必須屬於正確玩家且尚未刪除。");
-
-        db.BattleLineups.RemoveRange(battle.Lineups);
-        for (var index = 0; index < 3; index++)
-        {
-            var a = blades[playerASelection[index]];
-            var b = blades[playerBSelection[index]];
-            db.BattleLineups.Add(new BattleLineup
-            {
-                BattleId = battle.Id,
-                SequenceNo = 1,
-                PositionNo = index + 1,
-                PlayerAId = battle.PlayerAId,
-                PlayerADisplayNameSnapshot = battle.PlayerA!.DisplayName,
-                PlayerABeybladeId = a.Id,
-                PlayerABeybladeNameSnapshot = a.Name,
-                PlayerBId = battle.PlayerBId,
-                PlayerBDisplayNameSnapshot = battle.PlayerB!.DisplayName,
-                PlayerBBeybladeId = b.Id,
-                PlayerBBeybladeNameSnapshot = b.Name,
-                IsCurrent = true
-            });
-        }
-        battle.Version = Guid.NewGuid().ToByteArray();
-        await db.SaveChangesAsync();
-        return ServiceResult.Success();
-    }
-
-    public async Task<ServiceResult> LockLineupAsync(int battleId, int creatorId)
-    {
-        var battle = await db.Battles.Include(x => x.Lineups).SingleOrDefaultAsync(x => x.Id == battleId);
-        if (battle is null) return ServiceResult.Failure("找不到對戰。");
-        if (battle.CreatedByUserId != creatorId) return ServiceResult.Failure("只有建立者可鎖定陣容。");
-        if (battle.Status != BattleStatus.Draft) return ServiceResult.Failure("目前狀態不能鎖定陣容。");
-        var lineup = battle.Lineups.Where(x => x.SequenceNo == 1).OrderBy(x => x.PositionNo).ToList();
-        if (lineup.Count != 3 || lineup.Select(x => x.PlayerABeybladeId).Distinct().Count() != 3 || lineup.Select(x => x.PlayerBBeybladeId).Distinct().Count() != 3)
-            return ServiceResult.Failure("雙方各需三顆不同的陀螺才能鎖定。");
-        battle.Status = BattleStatus.LineupLocked;
-        battle.Version = Guid.NewGuid().ToByteArray();
-        await db.SaveChangesAsync();
-        return ServiceResult.Success();
-    }
-
     public async Task<ServiceResult> AssignSidesAsync(int battleId, int operatorUserId, BattleSide sideA)
     {
         var battle = await db.Battles.SingleOrDefaultAsync(x => x.Id == battleId);
@@ -94,6 +18,7 @@ public class BattleService(AppDbContext db)
         if (battle.Status != BattleStatus.LineupLocked) return ServiceResult.Failure("只有陣容鎖定後、開始對戰前可以指定 Side。");
 
         battle.SideADesignation = sideA;
+        battle.Status = BattleStatus.SideSelection;
         battle.Version = Guid.NewGuid().ToByteArray();
         await db.SaveChangesAsync();
         return ServiceResult.Success();
@@ -104,7 +29,8 @@ public class BattleService(AppDbContext db)
         var battle = await db.Battles.Include(x => x.Lineups).SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult<BattleRound>.Failure("找不到對戰。");
         if (battle.CreatedByUserId != creatorId) return ServiceResult<BattleRound>.Failure("只有建立者可開始對戰。");
-        if (battle.Status != BattleStatus.LineupLocked) return ServiceResult<BattleRound>.Failure("目前狀態不能開始對戰。");
+        if (battle.Status != BattleStatus.SideSelection || battle.SideADesignation is null)
+            return ServiceResult<BattleRound>.Failure("裁判必須先明確指定 B/X Side 才能開始對戰。");
         var first = battle.Lineups.SingleOrDefault(x => x.IsCurrent && x.PositionNo == 1);
         if (first is null) return ServiceResult<BattleRound>.Failure("找不到已鎖定的陣容。");
         var round = CreateRound(battle, first, 1);
@@ -196,6 +122,10 @@ public class BattleService(AppDbContext db)
                 battle.TournamentMatch.UpdatedAtUtc = DateTime.UtcNow;
                 battle.TournamentMatch.Version = Guid.NewGuid().ToByteArray();
             }
+            else if (battle.SourceType == BattleSourceType.Quick)
+            {
+                battle.Status = BattleStatus.ReorderSelection;
+            }
         }
         battle.Version = Guid.NewGuid().ToByteArray();
         await db.SaveChangesAsync();
@@ -239,77 +169,223 @@ public class BattleService(AppDbContext db)
         return ServiceResult.Success();
     }
 
-    public async Task<ServiceResult<BattleRound>> CreateReorderedLineupAsync(int battleId, int creatorId, IReadOnlyList<int> orderedBladeIdsA, IReadOnlyList<int> orderedBladeIdsB)
-    {
-        var battle = await db.Battles.Include(x => x.Lineups).Include(x => x.Rounds).SingleOrDefaultAsync(x => x.Id == battleId);
-        if (battle is null) return ServiceResult<BattleRound>.Failure("找不到對戰。");
-        if (battle.CreatedByUserId != creatorId) return ServiceResult<BattleRound>.Failure("只有建立者可重新排列陣容。");
-        if (battle.Status != BattleStatus.InProgress) return ServiceResult<BattleRound>.Failure("目前狀態不能重新排列。");
-        if (!IsValidSelection(orderedBladeIdsA) || !IsValidSelection(orderedBladeIdsB)) return ServiceResult<BattleRound>.Failure("雙方必須各排列三顆不同的陀螺。");
-
-        var initial = battle.Lineups.Where(x => x.SequenceNo == 1).ToList();
-        if (!orderedBladeIdsA.Order().SequenceEqual(initial.Select(x => x.PlayerABeybladeId).Order()) || !orderedBladeIdsB.Order().SequenceEqual(initial.Select(x => x.PlayerBBeybladeId).Order()))
-            return ServiceResult<BattleRound>.Failure("重排只能使用最初鎖定的三顆陀螺。");
-        var currentSequence = battle.Lineups.Where(x => x.IsCurrent).Select(x => x.SequenceNo).Distinct().SingleOrDefault();
-        var currentLineupIds = battle.Lineups.Where(x => x.SequenceNo == currentSequence).Select(x => x.Id).ToHashSet();
-        var currentRounds = battle.Rounds.Where(x => currentLineupIds.Contains(x.LineupId)).ToList();
-        if (currentRounds.Count != 3 || currentRounds.Any(x => x.Status != BattleRoundStatus.Completed))
-            return ServiceResult<BattleRound>.Failure("目前三個順位的 Round 都完成後才能重排。");
-
-        foreach (var item in battle.Lineups.Where(x => x.IsCurrent)) item.IsCurrent = false;
-        var sequenceNo = currentSequence + 1;
-        var aSnapshots = initial.ToDictionary(x => x.PlayerABeybladeId, x => x.PlayerABeybladeNameSnapshot);
-        var bSnapshots = initial.ToDictionary(x => x.PlayerBBeybladeId, x => x.PlayerBBeybladeNameSnapshot);
-        var newLineup = new List<BattleLineup>();
-        for (var index = 0; index < 3; index++)
-        {
-            newLineup.Add(new BattleLineup
-            {
-                BattleId = battle.Id, SequenceNo = sequenceNo, PositionNo = index + 1, IsCurrent = true,
-                PlayerAId = initial.Single(x => x.PlayerABeybladeId == orderedBladeIdsA[index]).PlayerAId,
-                PlayerADisplayNameSnapshot = initial.Single(x => x.PlayerABeybladeId == orderedBladeIdsA[index]).PlayerADisplayNameSnapshot,
-                PlayerABeybladeId = orderedBladeIdsA[index], PlayerABeybladeNameSnapshot = aSnapshots[orderedBladeIdsA[index]],
-                PlayerBId = initial.Single(x => x.PlayerBBeybladeId == orderedBladeIdsB[index]).PlayerBId,
-                PlayerBDisplayNameSnapshot = initial.Single(x => x.PlayerBBeybladeId == orderedBladeIdsB[index]).PlayerBDisplayNameSnapshot,
-                PlayerBBeybladeId = orderedBladeIdsB[index], PlayerBBeybladeNameSnapshot = bSnapshots[orderedBladeIdsB[index]]
-            });
-        }
-        db.BattleLineups.AddRange(newLineup);
-        await db.SaveChangesAsync();
-        var firstRound = CreateRound(battle, newLineup[0], battle.Rounds.Max(x => x.RoundNo) + 1);
-        db.BattleRounds.Add(firstRound);
-        battle.Version = Guid.NewGuid().ToByteArray();
-        await db.SaveChangesAsync();
-        return ServiceResult<BattleRound>.Success(firstRound);
-    }
-
-    public async Task<ServiceResult> ReviseRoundAsync(int battleId, int roundId, int creatorId, int winnerPlayerId, ResultType resultType, string? reason)
+    public async Task<ServiceResult> ForfeitQuickBattleAsync(int battleId, int creatorId, int forfeitingPlayerId)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var battle = await db.Battles.Include(x => x.TournamentMatch).Include(x => x.Rounds).ThenInclude(x => x.Events).SingleOrDefaultAsync(x => x.Id == battleId);
+        var battle = await db.Battles
+            .Include(x => x.Rounds).ThenInclude(x => x.Events)
+            .SingleOrDefaultAsync(x => x.Id == battleId);
+        if (battle is null) return ServiceResult.Failure("找不到對戰。");
+        if (battle.SourceType != BattleSourceType.Quick)
+            return ServiceResult.Failure("Tournament Battle 必須從賽事對局辦理棄權。");
+        if (battle.CreatedByUserId != creatorId)
+            return ServiceResult.Failure("只有建立者裁判可以判定棄權。");
+        if (battle.Status is not (BattleStatus.InProgress or BattleStatus.ReorderSelection))
+            return ServiceResult.Failure("只有進行中或等待重排的快速對戰可以判定棄權。");
+        if (battle.PlayerAId is null || battle.PlayerBId is null ||
+            forfeitingPlayerId != battle.PlayerAId && forfeitingPlayerId != battle.PlayerBId)
+            return ServiceResult.Failure("棄權者不屬於這場對戰。");
+
+        var now = DateTime.UtcNow;
+        foreach (var round in battle.Rounds.Where(x => x.Status == BattleRoundStatus.InProgress))
+            foreach (var roundEvent in round.Events)
+            {
+                roundEvent.IsEffective = false;
+                roundEvent.InvalidationReason = BattleRoundEventInvalidationReason.BattleTerminated;
+            }
+
+        (battle.SideAScore, battle.SideBScore) = BattleRules.CalculateScores(battle.Rounds);
+        var sideAWon = forfeitingPlayerId == battle.PlayerBId;
+        battle.Status = BattleStatus.Forfeited;
+        battle.WinningPlayerId = sideAWon ? battle.PlayerAId : battle.PlayerBId;
+        battle.WinningSide = sideAWon
+            ? battle.SideADesignation
+            : battle.SideADesignation is null ? null : BattleRules.Opposite(battle.SideADesignation.Value);
+        battle.CompletedAtUtc = now;
+        battle.Version = Guid.NewGuid().ToByteArray();
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return ServiceResult.Success();
+    }
+
+    public async Task<ServiceResult> CancelQuickBattleAsync(int battleId, int creatorId, bool confirmed)
+    {
+        if (!confirmed)
+            return ServiceResult.Failure("請先明確確認整場資料將永久刪除且不列入統計。");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var battle = await db.Battles.AsNoTracking().SingleOrDefaultAsync(x => x.Id == battleId);
+        if (battle is null) return ServiceResult.Failure("找不到對戰。");
+        if (battle.SourceType != BattleSourceType.Quick)
+            return ServiceResult.Failure("Tournament Battle 必須使用賽事取消或撤銷流程。");
+        if (battle.CreatedByUserId != creatorId)
+            return ServiceResult.Failure("只有建立者裁判可以取消對戰。");
+        if (battle.Status is not (BattleStatus.InProgress or BattleStatus.ReorderSelection or BattleStatus.VictoryPendingCompletion))
+            return ServiceResult.Failure("只有尚未正式完成的快速對戰可以取消。");
+
+        var claimedVersion = Guid.NewGuid().ToByteArray();
+        var claimed = await db.Battles
+            .Where(x => x.Id == battleId && x.Version.SequenceEqual(battle.Version))
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Version, claimedVersion));
+        if (claimed != 1)
+            return ServiceResult.Failure("對戰資料已被其他操作更新，請重新整理後再取消。");
+
+        await db.BattleRoundRevisions
+            .Where(x => x.BattleRound.BattleId == battleId)
+            .ExecuteDeleteAsync();
+        await db.BattleRoundEvents
+            .Where(x => x.BattleRound.BattleId == battleId)
+            .ExecuteDeleteAsync();
+        await db.BattleRounds.Where(x => x.BattleId == battleId).ExecuteDeleteAsync();
+        await db.BattleLineupSelections.Where(x => x.BattleId == battleId).ExecuteDeleteAsync();
+        await db.BattleTeamOrderSelections.Where(x => x.BattleId == battleId).ExecuteDeleteAsync();
+        await db.BattleLineups.Where(x => x.BattleId == battleId).ExecuteDeleteAsync();
+        await db.Battles.Where(x => x.Id == battleId).ExecuteDeleteAsync();
+        await transaction.CommitAsync();
+        db.ChangeTracker.Clear();
+        return ServiceResult.Success();
+    }
+
+    public async Task<ServiceResult> ReviseRoundAsync(
+        int battleId,
+        int roundId,
+        int creatorId,
+        int winnerPlayerId,
+        ResultType resultType,
+        string? reason,
+        bool confirmDownstreamReset = false)
+    {
+        var revisionReason = reason?.Trim() ?? string.Empty;
+        if (revisionReason.Length is < 1 or > 500)
+            return ServiceResult.Failure("修改原因須為 1 至 500 個字元。");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var battle = await db.Battles.AsSplitQuery()
+            .Include(x => x.TournamentMatch).ThenInclude(x => x!.Tournament)
+            .Include(x => x.Lineups)
+            .Include(x => x.Rounds).ThenInclude(x => x.Events)
+            .SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult.Failure("找不到對戰。");
         if (battle.CreatedByUserId != creatorId) return ServiceResult.Failure("只有建立者可修改判決。");
-        if (battle.Status is not (BattleStatus.InProgress or BattleStatus.VictoryPendingCompletion)) return ServiceResult.Failure("目前狀態不能修改判決。");
+        if (battle.Status is not (BattleStatus.InProgress or BattleStatus.ReorderSelection or BattleStatus.VictoryPendingCompletion or BattleStatus.Completed))
+            return ServiceResult.Failure("目前狀態不能修改判決。");
+        if (battle.TournamentMatch is { } regulationMatch && regulationMatch.Bracket != TournamentBracket.Playoff &&
+            regulationMatch.Tournament.Format is TournamentFormat.RoundRobin or TournamentFormat.Swiss &&
+            await db.TournamentMatches.AnyAsync(x => x.TournamentId == regulationMatch.TournamentId &&
+                x.Bracket == TournamentBracket.Playoff))
+            return ServiceResult.Failure("冠軍加賽已建立，不能直接修改例行對局判決，以免加賽名單與排名失去一致性。");
         var round = battle.Rounds.SingleOrDefault(x => x.Id == roundId);
         if (round is null) return ServiceResult.Failure("找不到指定的 Round。");
         if (winnerPlayerId != round.PlayerAId && winnerPlayerId != round.PlayerBId) return ServiceResult.Failure("勝者不屬於指定順位。");
 
-        var previous = round.Events.Where(x => x.IsEffective).OrderBy(x => x.EventSequence).Select(EventSnapshot.From).ToList();
-        foreach (var eventToReplace in round.Events.Where(x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult)) eventToReplace.IsEffective = false;
-        round.Events.Add(new BattleRoundEvent
+        var wasCompleted = battle.Status == BattleStatus.Completed;
+        var wasAwaitingReorder = battle.Status == BattleStatus.ReorderSelection;
+        var replacement = new BattleRoundEvent
         {
-            EventSequence = round.Events.Count + 1, EventType = BattleRoundEventType.BattleResult,
-            WinnerPlayerId = winnerPlayerId, ResultType = resultType, ScoreAwarded = BattleRules.ScoreFor(resultType),
-            IsEffective = true, CreatedAtUtc = DateTime.UtcNow
-        });
+            BattleRoundId = round.Id,
+            EventSequence = round.Events.Count + 1,
+            EventType = BattleRoundEventType.BattleResult,
+            WinnerPlayerId = winnerPlayerId,
+            ResultType = resultType,
+            ScoreAwarded = BattleRules.ScoreFor(resultType),
+            IsEffective = true,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        var replay = BuildRevisionReplay(battle, round, replacement);
+        Tournament? tournament = null;
+        TournamentMatch? targetMatch = battle.TournamentMatch;
+        List<TournamentMatch> downstream = [];
+        int? revisedWinnerEntryId = null;
+        int? revisedLoserEntryId = null;
+        var outcomeChanged = false;
+        if (wasCompleted && targetMatch is not null)
+        {
+            revisedWinnerEntryId = replay.ThresholdReached
+                ? replay.SideAWon ? targetMatch.SideAEntryId : targetMatch.SideBEntryId
+                : null;
+            revisedLoserEntryId = replay.ThresholdReached
+                ? replay.SideAWon ? targetMatch.SideBEntryId : targetMatch.SideAEntryId
+                : null;
+            if (replay.ThresholdReached && (revisedWinnerEntryId is null || revisedLoserEntryId is null))
+                return ServiceResult.Failure("Tournament Match 缺少已解析的參賽單位。");
+            outcomeChanged = targetMatch.WinnerEntryId != revisedWinnerEntryId || targetMatch.LoserEntryId != revisedLoserEntryId;
+            if (outcomeChanged)
+            {
+                tournament = await db.Tournaments.AsSplitQuery()
+                    .Include(x => x.Entries).ThenInclude(x => x.Members)
+                    .Include(x => x.Matches).ThenInclude(x => x.Participants)
+                    .Include(x => x.Matches).ThenInclude(x => x.Battle).ThenInclude(x => x!.Rounds).ThenInclude(x => x.Events)
+                    .SingleAsync(x => x.Id == targetMatch.TournamentId);
+                targetMatch = tournament.Matches.Single(x => x.Id == targetMatch.Id);
+                battle = targetMatch.Battle!;
+                round = battle.Rounds.Single(x => x.Id == roundId);
+                if (tournament.Format == TournamentFormat.Swiss &&
+                    tournament.Matches.Any(x => x.Bracket == targetMatch.Bracket && x.RoundNumber > targetMatch.RoundNumber))
+                    return ServiceResult.Failure("瑞士輪後續配對已建立；請先由最末輪逆序撤銷，才能變更此場勝方。");
+                downstream = FindDirectDownstream(tournament, targetMatch.Id);
+                var blocked = downstream.FirstOrDefault(x => TournamentMatchService.IsStartedOrResolvedDownstream(x.Status));
+                if (blocked is not null)
+                    return ServiceResult.Failure($"下游對局 #{blocked.SequenceNumber} 已開始或已有正式結果；必須先由下游逆序撤銷。");
+                if (!confirmDownstreamReset && downstream.Any(TournamentMatchService.HasPreparedLineup))
+                    return ServiceResult.Failure("勝方變更會撤銷下游既有 Lineup；請勾選確認後再繼續。");
+            }
+        }
+
+        var previous = round.Events.Where(x => x.IsEffective).OrderBy(x => x.EventSequence).Select(EventSnapshot.From).ToList();
+        var previousBattleSnapshot = SerializeBattleSnapshot(battle, targetMatch);
+        foreach (var eventToReplace in replay.SupersededEventIds.Select(id => battle.Rounds.SelectMany(x => x.Events).Single(e => e.Id == id)))
+        {
+            eventToReplace.IsEffective = false;
+            eventToReplace.InvalidationReason = BattleRoundEventInvalidationReason.SupersededByRevision;
+        }
+        foreach (var candidate in battle.Rounds.SelectMany(x => x.Events).Where(x => replay.CandidateEventIds.Contains(x.Id)))
+        {
+            candidate.IsEffective = replay.EffectiveEventIds.Contains(candidate.Id);
+            candidate.InvalidationReason = candidate.IsEffective ? null : BattleRoundEventInvalidationReason.VictoryThresholdReached;
+        }
+        replacement.IsEffective = replay.ReplacementEffective;
+        replacement.InvalidationReason = replacement.IsEffective ? null : BattleRoundEventInvalidationReason.VictoryThresholdReached;
+        round.Events.Add(replacement);
+        battle.SideAScore = replay.SideAScore;
+        battle.SideBScore = replay.SideBScore;
+        var now = DateTime.UtcNow;
+        ApplyRevisedOutcome(battle, targetMatch, wasCompleted, replay, revisedWinnerEntryId, revisedLoserEntryId, now);
+        if (wasAwaitingReorder && !replay.ThresholdReached)
+            battle.Status = BattleStatus.ReorderSelection;
+
+        if (outcomeChanged && tournament is not null && targetMatch is not null)
+        {
+            foreach (var dependent in downstream)
+                ResetDownstreamAfterRevision(
+                    dependent, targetMatch.Id, revisedWinnerEntryId, revisedLoserEntryId,
+                    creatorId, battle.Id, now);
+            ApplyResetFinalRule(tournament, targetMatch, downstream, revisedWinnerEntryId, revisedLoserEntryId, now);
+            tournament.Status = TournamentStatus.InProgress;
+            tournament.CompletedAtUtc = null;
+            tournament.UpdatedAtUtc = now;
+            tournament.Version = Guid.NewGuid().ToByteArray();
+        }
+
         var revised = round.Events.Where(x => x.IsEffective).OrderBy(x => x.EventSequence).Select(EventSnapshot.From).ToList();
         db.BattleRoundRevisions.Add(new BattleRoundRevision
         {
-            BattleRoundId = round.Id, ChangedByUserId = creatorId, ChangedAtUtc = DateTime.UtcNow, Reason = reason?.Trim(),
-            PreviousEffectiveEventSnapshot = JsonSerializer.Serialize(previous), NewEffectiveEventSnapshot = JsonSerializer.Serialize(revised)
+            BattleRoundId = round.Id,
+            ChangedByUserId = creatorId,
+            ChangedAtUtc = now,
+            Reason = revisionReason,
+            PreviousEffectiveEventSnapshot = JsonSerializer.Serialize(previous),
+            NewEffectiveEventSnapshot = JsonSerializer.Serialize(revised),
+            PreviousBattleSnapshot = previousBattleSnapshot,
+            NewBattleSnapshot = SerializeBattleSnapshot(battle, targetMatch)
         });
-        await RecalculateBattleAsync(battle);
+        battle.Version = Guid.NewGuid().ToByteArray();
         await db.SaveChangesAsync();
+        if (outcomeChanged && tournament is not null && replay.ThresholdReached)
+        {
+            ActivateNextReadyMatch(tournament, now);
+            SetTournamentCompletionState(tournament, now);
+            await db.SaveChangesAsync();
+        }
         await transaction.CommitAsync();
         return ServiceResult.Success();
     }
@@ -319,12 +395,313 @@ public class BattleService(AppDbContext db)
         var battle = await db.Battles.Include(x => x.PlayerA).Include(x => x.PlayerB).Include(x => x.Lineups).Include(x => x.Rounds).ThenInclude(x => x.Events)
             .Include(x => x.TournamentMatch).ThenInclude(x => x!.SideAEntry)
             .Include(x => x.TournamentMatch).ThenInclude(x => x!.SideBEntry)
+            .Include(x => x.VoidedTournamentMatch).ThenInclude(x => x!.SideAEntry)
+            .Include(x => x.VoidedTournamentMatch).ThenInclude(x => x!.SideBEntry)
+            .Include(x => x.VoidedTournamentMatch).ThenInclude(x => x!.Participants)
+            .Include(x => x.VoidedByUser)
             .SingleOrDefaultAsync(x => x.Id == battleId && (x.CreatedByUserId == userId || x.PlayerAId == userId || x.PlayerBId == userId ||
-                (x.TournamentMatch != null && x.TournamentMatch.Participants.Any(p => p.UserId == userId))));
+                (x.TournamentMatch != null && x.TournamentMatch.Participants.Any(p => p.UserId == userId)) ||
+                (x.VoidedTournamentMatch != null && x.VoidedTournamentMatch.Participants.Any(p => p.UserId == userId)) ||
+                (x.Status == BattleStatus.Voided && x.LineupSelections.Any(s => s.UserId == userId))));
         return battle is null ? ServiceResult<Battle>.Failure("找不到對戰。") : ServiceResult<Battle>.Success(battle);
     }
 
-    private static bool IsValidSelection(IReadOnlyList<int> selection) => selection.Count == 3 && selection.Distinct().Count() == 3 && selection.All(x => x > 0);
+    private static RevisionReplay BuildRevisionReplay(
+        Battle battle,
+        BattleRound revisedRound,
+        BattleRoundEvent replacement)
+    {
+        var superseded = revisedRound.Events
+            .Where(x => x.EventType == BattleRoundEventType.BattleResult &&
+                (x.IsEffective || x.InvalidationReason == BattleRoundEventInvalidationReason.VictoryThresholdReached))
+            .Select(x => x.Id)
+            .ToHashSet();
+        var candidates = battle.Rounds
+            .SelectMany(round => round.Events
+                .Where(x => !superseded.Contains(x.Id) &&
+                    (x.IsEffective || x.InvalidationReason == BattleRoundEventInvalidationReason.VictoryThresholdReached))
+                .Select(x => new ReplayCandidate(round, x, false)))
+            .Append(new ReplayCandidate(revisedRound, replacement, true))
+            .OrderBy(x => x.Round.RoundNo)
+            .ThenBy(x => x.Event.EventSequence)
+            .ToList();
+
+        var candidateIds = candidates.Where(x => !x.IsReplacement).Select(x => x.Event.Id).ToHashSet();
+        var effectiveIds = new HashSet<int>();
+        var replacementEffective = false;
+        var sideAScore = 0;
+        var sideBScore = 0;
+        var thresholdReached = false;
+        var sideAWon = false;
+        foreach (var candidate in candidates)
+        {
+            if (thresholdReached) continue;
+            if (candidate.IsReplacement) replacementEffective = true;
+            else effectiveIds.Add(candidate.Event.Id);
+            if (candidate.Event.WinnerPlayerId == candidate.Round.PlayerAId)
+                sideAScore += candidate.Event.ScoreAwarded;
+            else if (candidate.Event.WinnerPlayerId == candidate.Round.PlayerBId)
+                sideBScore += candidate.Event.ScoreAwarded;
+            if (sideAScore >= battle.ScoreToWin || sideBScore >= battle.ScoreToWin)
+            {
+                thresholdReached = true;
+                sideAWon = sideAScore >= battle.ScoreToWin;
+            }
+        }
+
+        return new RevisionReplay(
+            superseded, candidateIds, effectiveIds, replacementEffective,
+            sideAScore, sideBScore, thresholdReached, sideAWon);
+    }
+
+    private void ApplyRevisedOutcome(
+        Battle battle,
+        TournamentMatch? match,
+        bool wasCompleted,
+        RevisionReplay replay,
+        int? revisedWinnerEntryId,
+        int? revisedLoserEntryId,
+        DateTime now)
+    {
+        if (replay.ThresholdReached)
+        {
+            if (wasCompleted)
+            {
+                battle.Status = BattleStatus.Completed;
+                battle.CompletedAtUtc ??= now;
+                battle.WinningPlayerId = battle.SourceType == BattleSourceType.TournamentTeam
+                    ? null
+                    : replay.SideAWon ? battle.PlayerAId : battle.PlayerBId;
+                battle.WinningSide = replay.SideAWon
+                    ? battle.SideADesignation
+                    : battle.SideADesignation is null ? null : BattleRules.Opposite(battle.SideADesignation.Value);
+                if (match is not null)
+                {
+                    match.WinnerEntryId = revisedWinnerEntryId;
+                    match.LoserEntryId = revisedLoserEntryId;
+                    match.Status = TournamentMatchStatus.Completed;
+                    match.ResolutionReason = "BattleRevised";
+                    match.CompletedAtUtc ??= now;
+                }
+            }
+            else
+            {
+                battle.Status = BattleStatus.VictoryPendingCompletion;
+                battle.CompletedAtUtc = null;
+                battle.WinningPlayerId = null;
+                battle.WinningSide = null;
+                if (match is not null)
+                    match.Status = TournamentMatchStatus.VictoryPendingCompletion;
+            }
+        }
+        else
+        {
+            battle.Status = BattleStatus.InProgress;
+            battle.CompletedAtUtc = null;
+            battle.WinningPlayerId = null;
+            battle.WinningSide = null;
+            if (match is not null)
+            {
+                match.WinnerEntryId = null;
+                match.LoserEntryId = null;
+                match.CompletedAtUtc = null;
+                match.ResolutionReason = "BattleRevisionReopened";
+            }
+            if (wasCompleted)
+                PrepareContinuationAfterRevision(battle, match, now);
+            else if (match is not null)
+                match.Status = TournamentMatchStatus.InProgress;
+        }
+
+        if (match is not null)
+        {
+            match.UpdatedAtUtc = now;
+            match.Version = Guid.NewGuid().ToByteArray();
+        }
+    }
+
+    private void PrepareContinuationAfterRevision(Battle battle, TournamentMatch? match, DateTime now)
+    {
+        if (battle.Rounds.Any(x => x.Status == BattleRoundStatus.InProgress))
+        {
+            if (match is not null) match.Status = TournamentMatchStatus.InProgress;
+            return;
+        }
+        var currentSequence = battle.Lineups.Where(x => x.IsCurrent).Select(x => x.SequenceNo).Distinct().SingleOrDefault();
+        var playedLineupIds = battle.Rounds.Select(x => x.LineupId).ToHashSet();
+        var nextLineup = battle.Lineups
+            .Where(x => x.SequenceNo == currentSequence && !playedLineupIds.Contains(x.Id))
+            .OrderBy(x => x.PositionNo)
+            .FirstOrDefault();
+        if (nextLineup is not null)
+        {
+            db.BattleRounds.Add(CreateRound(battle, nextLineup, battle.Rounds.Max(x => x.RoundNo) + 1));
+            if (match is not null) match.Status = TournamentMatchStatus.InProgress;
+        }
+        else if (match is not null)
+        {
+            match.Status = TournamentMatchStatus.ReorderSelection;
+        }
+    }
+
+    private static List<TournamentMatch> FindDirectDownstream(Tournament tournament, int sourceMatchId) =>
+        tournament.Matches.Where(x => x.Id != sourceMatchId &&
+            ((x.SideASourceKind is TournamentParticipantSourceKind.MatchWinner or TournamentParticipantSourceKind.MatchLoser &&
+                x.SideASourceReferenceId == sourceMatchId) ||
+             (x.SideBSourceKind is TournamentParticipantSourceKind.MatchWinner or TournamentParticipantSourceKind.MatchLoser &&
+                x.SideBSourceReferenceId == sourceMatchId)))
+            .ToList();
+
+    private void ResetDownstreamAfterRevision(
+        TournamentMatch dependent,
+        int sourceMatchId,
+        int? winnerEntryId,
+        int? loserEntryId,
+        int organizerUserId,
+        int revisedBattleId,
+        DateTime now)
+    {
+        if (dependent.Battle is { } dependentBattle)
+            TournamentMatchService.VoidBattle(
+                dependentBattle, dependent, organizerUserId,
+                $"上游 Battle #{revisedBattleId} 修正後參賽者變更", now);
+        db.TournamentMatchParticipants.RemoveRange(dependent.Participants);
+        if (dependent.SideASourceReferenceId == sourceMatchId)
+            dependent.SideAEntryId = ResolveRevisedSource(dependent.SideASourceKind, dependent.SideAEntryId, winnerEntryId, loserEntryId);
+        if (dependent.SideBSourceReferenceId == sourceMatchId)
+            dependent.SideBEntryId = ResolveRevisedSource(dependent.SideBSourceKind, dependent.SideBEntryId, winnerEntryId, loserEntryId);
+        dependent.WinnerEntryId = null;
+        dependent.LoserEntryId = null;
+        dependent.Status = TournamentMatchStatus.WaitingForParticipants;
+        dependent.ResolutionReason = $"UpstreamBattleRevised:{revisedBattleId}";
+        dependent.CompletedAtUtc = null;
+        dependent.UpdatedAtUtc = now;
+        dependent.Version = Guid.NewGuid().ToByteArray();
+    }
+
+    private static int? ResolveRevisedSource(
+        TournamentParticipantSourceKind? kind,
+        int? current,
+        int? winnerEntryId,
+        int? loserEntryId) => kind switch
+    {
+        TournamentParticipantSourceKind.MatchWinner => winnerEntryId,
+        TournamentParticipantSourceKind.MatchLoser => loserEntryId,
+        _ => current
+    };
+
+    private static void ApplyResetFinalRule(
+        Tournament tournament,
+        TournamentMatch revisedMatch,
+        IReadOnlyList<TournamentMatch> downstream,
+        int? winnerEntryId,
+        int? loserEntryId,
+        DateTime now)
+    {
+        if (!revisedMatch.IsResetFinal && revisedMatch.Bracket == TournamentBracket.GrandFinal &&
+            winnerEntryId is not null && loserEntryId is not null)
+        {
+            var resetFinal = downstream.SingleOrDefault(x => x.IsResetFinal);
+            if (resetFinal is null) return;
+            int? undefeatedEntryId = null;
+            if (revisedMatch.SideASourceKind == TournamentParticipantSourceKind.MatchWinner &&
+                tournament.Matches.Single(x => x.Id == revisedMatch.SideASourceReferenceId).Bracket == TournamentBracket.Winners)
+                undefeatedEntryId = revisedMatch.SideAEntryId;
+            else if (revisedMatch.SideBSourceKind == TournamentParticipantSourceKind.MatchWinner &&
+                tournament.Matches.Single(x => x.Id == revisedMatch.SideBSourceReferenceId).Bracket == TournamentBracket.Winners)
+                undefeatedEntryId = revisedMatch.SideBEntryId;
+            if (winnerEntryId == undefeatedEntryId)
+            {
+                resetFinal.Status = TournamentMatchStatus.NotRequired;
+                resetFinal.WinnerEntryId = winnerEntryId;
+                resetFinal.LoserEntryId = loserEntryId;
+                resetFinal.ResolutionReason = "ResetFinalNotRequired";
+                resetFinal.CompletedAtUtc = now;
+            }
+        }
+    }
+
+    private static void ActivateNextReadyMatch(Tournament tournament, DateTime now)
+    {
+        if (tournament.Matches.Any(x => IsActiveMatchStatus(x.Status))) return;
+        var next = tournament.Matches
+            .Where(x => !x.IsBye && x.Status == TournamentMatchStatus.WaitingForParticipants &&
+                x.SideAEntryId is not null && x.SideBEntryId is not null)
+            .OrderBy(x => x.SequenceNumber)
+            .FirstOrDefault();
+        if (next is null) return;
+        next.Status = TournamentMatchStatus.AwaitingParticipationConfirmation;
+        next.UpdatedAtUtc = now;
+        next.Version = Guid.NewGuid().ToByteArray();
+        foreach (var entryId in new[] { next.SideAEntryId!.Value, next.SideBEntryId!.Value })
+        {
+            var entry = tournament.Entries.Single(x => x.Id == entryId);
+            if (tournament.Mode == TournamentMode.Individual)
+                next.Participants.Add(CreateRevisionParticipant(next, entry, entry.IndividualUserId!.Value, false, now));
+            else
+                foreach (var member in entry.Members.OrderBy(x => x.MemberOrder))
+                    next.Participants.Add(CreateRevisionParticipant(next, entry, member.UserId, member.IsRepresentative, now));
+        }
+    }
+
+    private static TournamentMatchParticipant CreateRevisionParticipant(
+        TournamentMatch match,
+        TournamentEntry entry,
+        int userId,
+        bool isRepresentative,
+        DateTime now) => new()
+    {
+        TournamentMatch = match,
+        TournamentEntryId = entry.Id,
+        UserId = userId,
+        IsMatchRepresentative = isRepresentative,
+        Status = TournamentParticipationStatus.Pending,
+        NotifiedAtUtc = now,
+        Version = Guid.NewGuid().ToByteArray()
+    };
+
+    private static bool IsActiveMatchStatus(TournamentMatchStatus status) => status is
+        TournamentMatchStatus.AwaitingParticipationConfirmation or TournamentMatchStatus.ReadyForLineup or
+        TournamentMatchStatus.LineupSelection or TournamentMatchStatus.TeamOrderSelection or
+        TournamentMatchStatus.LineupReview or TournamentMatchStatus.LineupLocked or
+        TournamentMatchStatus.SideSelection or TournamentMatchStatus.InProgress or
+        TournamentMatchStatus.ReorderSelection or TournamentMatchStatus.VictoryPendingCompletion;
+
+    private static void SetTournamentCompletionState(Tournament tournament, DateTime now)
+    {
+        var complete = tournament.Matches.All(x => x.Status is
+            TournamentMatchStatus.Completed or TournamentMatchStatus.Walkover or
+            TournamentMatchStatus.Forfeited or TournamentMatchStatus.NotRequired);
+        tournament.Status = complete ? TournamentStatus.Completed : TournamentStatus.InProgress;
+        tournament.CompletedAtUtc = complete ? tournament.CompletedAtUtc ?? now : null;
+        tournament.UpdatedAtUtc = now;
+        tournament.Version = Guid.NewGuid().ToByteArray();
+    }
+
+    private static string SerializeBattleSnapshot(Battle battle, TournamentMatch? match) => JsonSerializer.Serialize(new
+    {
+        battle.Id,
+        battle.Status,
+        battle.SideAScore,
+        battle.SideBScore,
+        battle.WinningSide,
+        battle.WinningPlayerId,
+        MatchId = match?.Id,
+        MatchStatus = match?.Status,
+        WinnerEntryId = match?.WinnerEntryId,
+        LoserEntryId = match?.LoserEntryId,
+        Events = battle.Rounds.OrderBy(x => x.RoundNo).SelectMany(round =>
+            round.Events.OrderBy(x => x.EventSequence).Select(roundEvent => new
+            {
+                round.RoundNo,
+                roundEvent.EventSequence,
+                roundEvent.EventType,
+                roundEvent.WinnerPlayerId,
+                roundEvent.ScoreAwarded,
+                roundEvent.IsEffective,
+                roundEvent.InvalidationReason
+            }))
+    });
 
     private static BattleRound CreateRound(Battle battle, BattleLineup lineup, int roundNo) => new()
     {
@@ -349,12 +726,7 @@ public class BattleService(AppDbContext db)
 
     private async Task RecalculateBattleAsync(Battle battle)
     {
-        battle.SideAScore = battle.Rounds.Sum(round => round.Events
-            .Where(x => x.IsEffective && x.WinnerPlayerId == round.PlayerAId)
-            .Sum(x => x.ScoreAwarded));
-        battle.SideBScore = battle.Rounds.Sum(round => round.Events
-            .Where(x => x.IsEffective && x.WinnerPlayerId == round.PlayerBId)
-            .Sum(x => x.ScoreAwarded));
+        (battle.SideAScore, battle.SideBScore) = BattleRules.CalculateScores(battle.Rounds);
         battle.Status = BattleRules.StatusForScore(battle.SideAScore, battle.SideBScore, battle.ScoreToWin);
         if (battle.TournamentMatch is not null)
         {
@@ -368,8 +740,34 @@ public class BattleService(AppDbContext db)
         await Task.CompletedTask;
     }
 
-    private sealed record EventSnapshot(int EventSequence, BattleRoundEventType EventType, int? ActorPlayerId, int? WinnerPlayerId, ResultType? ResultType, int ScoreAwarded)
+    private sealed record ReplayCandidate(BattleRound Round, BattleRoundEvent Event, bool IsReplacement);
+
+    private sealed record RevisionReplay(
+        IReadOnlySet<int> SupersededEventIds,
+        IReadOnlySet<int> CandidateEventIds,
+        IReadOnlySet<int> EffectiveEventIds,
+        bool ReplacementEffective,
+        int SideAScore,
+        int SideBScore,
+        bool ThresholdReached,
+        bool SideAWon);
+
+    private sealed record EventSnapshot(
+        int EventSequence,
+        BattleRoundEventType EventType,
+        int? ActorPlayerId,
+        int? WinnerPlayerId,
+        ResultType? ResultType,
+        int ScoreAwarded,
+        BattleRoundEventInvalidationReason? InvalidationReason)
     {
-        public static EventSnapshot From(BattleRoundEvent battleEvent) => new(battleEvent.EventSequence, battleEvent.EventType, battleEvent.ActorPlayerId, battleEvent.WinnerPlayerId, battleEvent.ResultType, battleEvent.ScoreAwarded);
+        public static EventSnapshot From(BattleRoundEvent battleEvent) => new(
+            battleEvent.EventSequence,
+            battleEvent.EventType,
+            battleEvent.ActorPlayerId,
+            battleEvent.WinnerPlayerId,
+            battleEvent.ResultType,
+            battleEvent.ScoreAwarded,
+            battleEvent.InvalidationReason);
     }
 }

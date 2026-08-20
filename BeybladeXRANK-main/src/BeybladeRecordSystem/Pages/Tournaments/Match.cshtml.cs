@@ -15,8 +15,22 @@ public class MatchModel(TournamentMatchService matchService) : PageModel
     [BindProperty] public List<int> OrderedUserIds { get; set; } = [];
     [BindProperty] public int NewRepresentativeUserId { get; set; }
     [BindProperty] public BattleSide SideA { get; set; } = BattleSide.B;
+    [BindProperty] public string? ForfeitReason { get; set; }
+    [BindProperty] public int AbsentEntryId { get; set; }
+    [BindProperty] public string? NoShowReason { get; set; }
+    [BindProperty] public bool ConfirmNoShow { get; set; }
+    [BindProperty] public string? VoidReason { get; set; }
+    [BindProperty] public bool ConfirmDownstreamReset { get; set; }
 
     public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
+
+    public async Task<IActionResult> OnGetPollAsync(int id)
+    {
+        var workspace = await matchService.GetWorkspaceAsync(id, User.GetRequiredUserId());
+        return workspace is null
+            ? NotFound()
+            : new JsonResult(new { token = workspace.PollToken, status = workspace.Match.Status.ToString() });
+    }
 
     public async Task<IActionResult> OnPostRespondAsync(int id, bool accept)
         => RedirectWith(await matchService.RespondParticipationAsync(id, User.GetRequiredUserId(), accept), id,
@@ -47,6 +61,20 @@ public class MatchModel(TournamentMatchService matchService) : PageModel
         TempData["Error"] = result.Error;
         return RedirectToPage(new { id });
     }
+
+    public async Task<IActionResult> OnPostForfeitAsync(int id)
+        => RedirectWith(await matchService.ForfeitAsync(id, User.GetRequiredUserId(), ForfeitReason), id,
+            "已完成本場棄權，對手獲勝且賽程已推進。");
+
+    public async Task<IActionResult> OnPostDeclareNoShowAsync(int id)
+        => RedirectWith(await matchService.DeclareNoShowAsync(
+            id, User.GetRequiredUserId(), AbsentEntryId, NoShowReason, ConfirmNoShow), id,
+            "未到判定已完成；對手以 Walkover 獲勝，未建立比分 Battle。");
+
+    public async Task<IActionResult> OnPostVoidAndReopenAsync(int id)
+        => RedirectWith(await matchService.VoidAndReopenAsync(
+            id, User.GetRequiredUserId(), VoidReason, ConfirmDownstreamReset), id,
+            "原 Battle 已保留為 Voided；雙方須重新接受出賽並重新選擇陀螺。");
 
     private async Task<bool> LoadAsync(int id)
     {

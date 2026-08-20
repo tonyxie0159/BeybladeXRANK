@@ -16,10 +16,12 @@ public class ReviseModel(BattleService battleService) : PageModel
     [BindProperty] public int WinnerPlayerId { get; set; }
     [BindProperty] public ResultType ResultType { get; set; }
     [BindProperty] public string? Reason { get; set; }
+    [BindProperty] public bool ConfirmDownstreamReset { get; set; }
     public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
     public async Task<IActionResult> OnPostAsync(int id)
     {
-        var result = await battleService.ReviseRoundAsync(id, RoundId, User.GetRequiredUserId(), WinnerPlayerId, ResultType, Reason);
+        var result = await battleService.ReviseRoundAsync(
+            id, RoundId, User.GetRequiredUserId(), WinnerPlayerId, ResultType, Reason, ConfirmDownstreamReset);
         if (result.Succeeded) return RedirectToPage("Battle", new { id });
         await LoadAsync(id); ModelState.AddModelError(string.Empty, result.Error!); return Page();
     }

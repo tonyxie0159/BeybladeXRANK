@@ -21,6 +21,18 @@ public static class BattleRules
 
     public static BattleSide Opposite(BattleSide side) => side == BattleSide.B ? BattleSide.X : BattleSide.B;
 
+    public static (int SideAScore, int SideBScore) CalculateScores(IEnumerable<BattleRound> rounds)
+    {
+        var materialized = rounds.ToList();
+        var sideAScore = materialized.Sum(round => round.Events
+            .Where(x => x.IsEffective && x.WinnerPlayerId == round.PlayerAId)
+            .Sum(x => x.ScoreAwarded));
+        var sideBScore = materialized.Sum(round => round.Events
+            .Where(x => x.IsEffective && x.WinnerPlayerId == round.PlayerBId)
+            .Sum(x => x.ScoreAwarded));
+        return (sideAScore, sideBScore);
+    }
+
     public static int FaultCount(IEnumerable<BattleRoundEvent> events, int actorPlayerId)
     {
         var count = 0;

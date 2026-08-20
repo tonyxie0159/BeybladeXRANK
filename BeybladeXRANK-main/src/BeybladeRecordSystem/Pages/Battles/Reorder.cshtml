@@ -1,4 +1,25 @@
 @page "{id:int}"
 @model BeybladeRecordSystem.Pages.Battles.ReorderModel
-@{ ViewData["Title"] = "重新排列陣容"; var originals = Model.Battle.Lineups.Where(x => x.SequenceNo == 1).OrderBy(x => x.PositionNo).ToList(); }
-<h1>重新排列陣容</h1><p>只能變更順位；陀螺不可替換，分數會保留。</p><form method="post"><div asp-validation-summary="ModelOnly" class="alert alert-danger"></div><div class="row g-3"><div class="col-md-6"><h2 class="h5">@Model.Battle.PlayerA.DisplayName</h2>@for (var i = 0; i < 3; i++) { <label class="form-label">@((i + 1).ToString()) 號</label><select name="PlayerAIds" class="form-select mb-2">@foreach (var blade in originals) { <option value="@blade.PlayerABeybladeId">@blade.PlayerABeybladeNameSnapshot</option> }</select> }</div><div class="col-md-6"><h2 class="h5">@Model.Battle.PlayerB.DisplayName</h2>@for (var i = 0; i < 3; i++) { <label class="form-label">@((i + 1).ToString()) 號</label><select name="PlayerBIds" class="form-select mb-2">@foreach (var blade in originals) { <option value="@blade.PlayerBBeybladeId">@blade.PlayerBBeybladeNameSnapshot</option> }</select> }</div></div><button class="btn btn-primary btn-lg mt-3">確認重排</button><a asp-page="Battle" asp-route-id="@Model.Battle.Id" class="btn btn-link mt-3">取消</a></form>
+@{ ViewData["Title"] = "重新排列陣容"; var battle = Model.Workspace.Battle; }
+<div class="d-flex justify-content-between align-items-center mb-3"><h1>密封重新排列</h1><a asp-page="Reorder" asp-route-id="@battle.Id" class="btn btn-outline-secondary">重新整理</a></div>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+<p>只能排列自己最初鎖定的三顆陀螺；不可替換，分數不歸零。雙方都提交後才會直接套用。</p>
+@if (Model.Workspace.CurrentUserSubmitted)
+{
+    <div class="alert alert-info">你的新順位已密封，等待對手提交。</div>
+    <ol>@foreach (var item in Model.Workspace.CurrentPrivateSelections.OrderBy(x => x.PositionNo)) { <li>@item.BeybladeNameSnapshot</li> }</ol>
+}
+else
+{
+    <form method="post" class="card card-body col-lg-7">
+        @for (var index = 0; index < 3; index++)
+        {
+            <label class="form-label">@(index + 1) 號順位</label>
+            <select name="BladeIds" class="form-select mb-3">@foreach (var blade in Model.Workspace.OriginalSelections) { <option value="@blade.BeybladeId">@blade.BeybladeNameSnapshot</option> }</select>
+        }
+        <button class="btn btn-primary btn-lg">密封提交重排</button>
+    </form>
+}
+<a asp-page="Battle" asp-route-id="@battle.Id" class="btn btn-link mt-3">返回比分畫面</a>
+@section Scripts { @if (Model.Workspace.CurrentUserSubmitted) { <script>window.setTimeout(() => window.location.reload(), 10000);</script> } }

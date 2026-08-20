@@ -4,14 +4,43 @@
 @{ var match = Model.Workspace.Match; ViewData["Title"] = $"對局 #{match.SequenceNumber}"; }
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div><h1>對局 #@match.SequenceNumber</h1><p class="text-muted mb-0">@match.SideAEntry!.DisplayNameSnapshot vs @match.SideBEntry!.DisplayNameSnapshot</p></div>
-    <span class="badge text-bg-primary">@match.Status</span>
+    <div class="text-end"><span class="badge text-bg-primary">@match.Status</span><div><a asp-page="Match" asp-route-id="@match.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div></div>
 </div>
 @if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
 @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+@if (match.Status == TournamentMatchStatus.Forfeited)
+{ <div class="alert alert-warning">本場已因棄權結束。勝方：@match.WinnerEntry?.DisplayNameSnapshot@if (!string.IsNullOrWhiteSpace(match.ResolutionReason) && match.ResolutionReason != "ParticipantForfeit") { <span>；原因：@match.ResolutionReason</span> }</div> }
+@if (match.Status == TournamentMatchStatus.Walkover)
+{
+    var wasNoShow = match.Participants.Any(x => x.Status == TournamentParticipationStatus.NoShow);
+    var noShowReason = wasNoShow && match.ResolutionReason?.StartsWith("NoShow: ") == true
+        ? match.ResolutionReason[8..]
+        : null;
+    <div class="alert alert-warning">本場以 Walkover 結束。勝方：@match.WinnerEntry?.DisplayNameSnapshot。
+        @if (wasNoShow) { <span>敗方由主辦方判定未到。</span> }
+        else { <span>敗方拒絕出賽。</span> }
+        @if (!string.IsNullOrWhiteSpace(noShowReason)) { <span>原因：@noShowReason</span> }
+    </div>
+}
+@if (match.Status == TournamentMatchStatus.Cancelled)
+{ <div class="alert alert-secondary">本場已隨整場比賽取消；已完成回合仍保留，未完成回合不列入統計。</div> }
+@if (match.VoidedBattles.Any())
+{
+    <section class="card card-body mb-3"><h2 class="h5">已撤銷 Battle 紀錄</h2><ul class="mb-0">@foreach (var voided in match.VoidedBattles.OrderByDescending(x => x.VoidedAtUtc)) { <li><a asp-page="/Battles/Battle" asp-route-id="@voided.Id">Battle #@voided.Id</a>：@voided.VoidReason（@(voided.VoidedAtUtc?.ToLocalTime().ToString("g") ?? "時間未知")，@(voided.VoidedByUser?.DisplayName ?? "操作者未知")）</li> }</ul></section>
+}
 
 @if (match.Status == TournamentMatchStatus.AwaitingParticipationConfirmation)
 {
     <section class="card card-body mb-3"><h2 class="h5">出賽確認</h2>
+    <div class="row g-2 mb-3">
+    @foreach (var entry in new[] { match.SideAEntry!, match.SideBEntry! })
+    {
+        var entryParticipants = match.Participants.Where(x => x.TournamentEntryId == entry.Id).OrderBy(x => x.User.DisplayName).ToList();
+        <div class="col-md-6"><div class="border rounded p-2 h-100"><strong>@entry.DisplayNameSnapshot</strong><ul class="mb-0">
+        @foreach (var participant in entryParticipants) { <li>@participant.User.DisplayName：@participant.Status</li> }
+        </ul></div></div>
+    }
+    </div>
     @if (Model.Workspace.CurrentParticipant?.Status == TournamentParticipationStatus.Pending)
     {
         <p>請確認是否參加本場對局。拒絕後本場會以不戰勝處理，無法撤回。</p>
@@ -19,6 +48,27 @@
         <form method="post" asp-page-handler="Respond" class="d-inline"><input type="hidden" name="accept" value="false" /><button class="btn btn-outline-danger" onclick="return confirm('確定拒絕出賽？')">拒絕出賽</button></form>
     }
     else { <p class="mb-0">等待另一位參賽者回覆。</p> }
+    @if (Model.Workspace.IsOrganizer)
+    {
+        <hr /><h3 class="h6">手動判定未到</h3>
+        <p class="small text-muted">未回應不會自動倒數判負。只有確定該 Entry 未到時才能操作；完成後對手直接獲勝、賽程只推進一次，且不建立比分或個人／陀螺戰績。</p>
+        @foreach (var entry in new[] { match.SideAEntry!, match.SideBEntry! })
+        {
+            if (match.Participants.Any(x => x.TournamentEntryId == entry.Id && x.Status == TournamentParticipationStatus.Pending))
+            {
+                var confirmationId = $"confirm-no-show-{entry.Id}";
+                <details class="mb-2"><summary class="btn btn-outline-danger">判定 @entry.DisplayNameSnapshot 未到</summary>
+                    <form method="post" asp-page-handler="DeclareNoShow" class="border rounded p-3 mt-2" onsubmit="return confirm('確定判定此 Entry 未到？對手會直接獲勝，且本場不建立比分 Battle。')">
+                        <input type="hidden" name="AbsentEntryId" value="@entry.Id" />
+                        <label for="no-show-reason-@entry.Id" class="form-label">未到原因（選填）</label>
+                        <textarea id="no-show-reason-@entry.Id" name="NoShowReason" class="form-control mb-2" maxlength="490"></textarea>
+                        <div class="form-check mb-2"><input id="@confirmationId" name="ConfirmNoShow" value="true" type="checkbox" class="form-check-input" required /><label for="@confirmationId" class="form-check-label">我已確認對手將直接獲勝、此操作會推進賽程且不建立比分 Battle</label></div>
+                        <button class="btn btn-danger">確認判定未到</button>
+                    </form>
+                </details>
+            }
+        }
+    }
     </section>
 }
 @if (match.Status == TournamentMatchStatus.LineupSelection)
@@ -98,4 +148,34 @@
 }
 @if (match.Status is TournamentMatchStatus.InProgress or TournamentMatchStatus.VictoryPendingCompletion && match.Battle is not null)
 { <a asp-page="/Battles/Battle" asp-route-id="@match.Battle.Id" class="btn btn-primary">回到進行中的對戰</a> }
+@if (Model.Workspace.CurrentParticipant is not null && match.Status is (TournamentMatchStatus.InProgress or TournamentMatchStatus.ReorderSelection))
+{
+    <details class="mt-3"><summary class="btn btn-outline-danger">本場棄權</summary><form method="post" asp-page-handler="Forfeit" class="card card-body mt-2" onsubmit="return confirm('棄權後對手直接獲勝；團體賽任一隊員棄權代表整隊落敗。確定繼續？')"><label asp-for="ForfeitReason" class="form-label">棄權原因（選填）</label><textarea asp-for="ForfeitReason" class="form-control mb-2" maxlength="500"></textarea><button class="btn btn-danger">確認棄權</button></form></details>
+}
+@if (Model.Workspace.IsOrganizer && match.Battle is not null && match.Tournament.Status != TournamentStatus.Cancelled && match.Battle.Status is not (BattleStatus.Cancelled or BattleStatus.Voided))
+{
+    <details class="mt-3"><summary class="btn btn-outline-dark">撤銷本場並重開</summary><form method="post" asp-page-handler="VoidAndReopen" class="card card-body mt-2" onsubmit="return confirm('原 Battle 會保留為 Voided 並完全排除統計；雙方必須重新出賽與選螺。確定繼續？')"><label asp-for="VoidReason" class="form-label">撤銷原因（必填）</label><textarea asp-for="VoidReason" class="form-control mb-2" minlength="1" maxlength="500" required></textarea><div class="form-check mb-2"><input asp-for="ConfirmDownstreamReset" class="form-check-input" /><label asp-for="ConfirmDownstreamReset" class="form-check-label">若下游已有尚未記分的 Lineup，同意一併撤銷其通知與陣容</label></div><button class="btn btn-dark">確認撤銷並重開</button></form></details>
+}
 <a asp-page="Details" asp-route-id="@match.TournamentId" class="btn btn-link">返回賽事</a>
+<div id="match-poll-state" data-token="@Model.Workspace.PollToken" hidden></div>
+
+@section Scripts {
+<script>
+(() => {
+    const state = document.getElementById('match-poll-state');
+    if (!state) return;
+    const initialToken = state.dataset.token;
+    const pollUrl = new URL(window.location.href);
+    pollUrl.searchParams.set('handler', 'Poll');
+    window.setInterval(async () => {
+        if (document.hidden) return;
+        try {
+            const response = await fetch(pollUrl, { method: 'GET', cache: 'no-store', headers: { 'Accept': 'application/json' } });
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (payload.token && payload.token !== initialToken) window.location.reload();
+        } catch { }
+    }, 10000);
+})();
+</script>
+}

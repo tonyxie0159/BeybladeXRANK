@@ -69,7 +69,8 @@ public enum TournamentParticipationStatus
     Pending,
     Accepted,
     Declined,
-    Invalidated
+    Invalidated,
+    NoShow
 }
 
 public enum TournamentMatchStatus
@@ -89,5 +90,6 @@ public enum TournamentMatchStatus
     Forfeited,
     Walkover,
     Voided,
-    NotRequired
+    NotRequired,
+    Cancelled
 }

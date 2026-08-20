@@ -1,8 +1,11 @@
 using System.Security.Cryptography;
+using System.Text;
 using BeybladeRecordSystem.Data;
+using BeybladeRecordSystem.Domain;
 using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
 using BeybladeRecordSystem.Domain.Tournaments;
+using BeybladeRecordSystem.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
 namespace BeybladeRecordSystem.Services;
@@ -18,6 +21,7 @@ public sealed record CreateTournamentRequest(
 public enum TournamentListFilter
 {
     All,
+    WaitingForMe,
     RegistrationOpen,
     InProgress,
     Completed,
@@ -32,11 +36,20 @@ public sealed record TournamentListItem(
     TournamentStatus Status,
     TournamentRegistrationStage RegistrationStage,
     string OrganizerDisplayName,
+    TournamentMode Mode,
+    TournamentRegistrationMode RegistrationMode,
+    TournamentFormat Format,
+    TournamentRuleSet RuleSet,
     string RuleSummary,
+    string? Notes,
     int RegisteredEntryCount,
     int TargetEntryCount,
     bool IsParticipant,
     bool IsOrganizer,
+    bool HasPendingAction,
+    bool HasPendingInvitation,
+    int? ActionMatchId,
+    string? PendingActionLabel,
     DateTime UpdatedAtUtc);
 
 public sealed record TournamentListPage(IReadOnlyList<TournamentListItem> Items, int PageNumber, int TotalPages, int TotalCount);
@@ -105,9 +118,66 @@ public class TournamentService(AppDbContext db)
     {
         const int pageSize = 20;
         pageNumber = Math.Max(1, pageNumber);
+
+        var matchActions = await new TournamentMatchService(db).GetActionableForUserAsync(userId);
+        var firstMatchActionByTournament = matchActions
+            .GroupBy(x => x.TournamentId)
+            .ToDictionary(x => x.Key, x => x.OrderBy(action => action.SequenceNumber).First());
+        var matchActionTournamentIds = firstMatchActionByTournament.Keys.ToArray();
+
+        var tournamentActionRows = await db.Tournaments.AsNoTracking()
+            .Where(x =>
+                x.Invitations.Any(i => i.InvitedUserId == userId && i.Status == TournamentInvitationStatus.Pending) ||
+                (x.Status == TournamentStatus.RegistrationOpen &&
+                 x.RegistrationMode == TournamentRegistrationMode.CompleteTeam &&
+                 x.Entries.Any(e => e.Status == TournamentEntryStatus.Pending &&
+                     e.Members.Any(m => m.UserId == userId && m.IsRepresentative))) ||
+                (x.OrganizerUserId == userId && x.Status == TournamentStatus.RegistrationOpen &&
+                 (x.RegistrationStage == TournamentRegistrationStage.CapacityReached ||
+                  x.RegistrationStage == TournamentRegistrationStage.Closed ||
+                  x.RegistrationStage == TournamentRegistrationStage.AwaitingTeamFormation ||
+                  x.RegistrationStage == TournamentRegistrationStage.ScheduleDraftCreated)))
+            .Select(x => new
+            {
+                x.Id,
+                x.RegistrationStage,
+                HasPendingInvitation = x.Invitations.Any(i =>
+                    i.InvitedUserId == userId && i.Status == TournamentInvitationStatus.Pending),
+                HasPendingTeamAction = x.Status == TournamentStatus.RegistrationOpen &&
+                    x.RegistrationMode == TournamentRegistrationMode.CompleteTeam &&
+                    x.Entries.Any(e => e.Status == TournamentEntryStatus.Pending &&
+                        e.Members.Any(m => m.UserId == userId && m.IsRepresentative)),
+                HasCompletePendingTeam = x.TeamSize != null && x.Entries.Any(e =>
+                    e.Status == TournamentEntryStatus.Pending &&
+                    e.Members.Any(m => m.UserId == userId && m.IsRepresentative) &&
+                    e.Members.Count == x.TeamSize.Value)
+            })
+            .ToListAsync();
+        var tournamentActionById = tournamentActionRows.ToDictionary(
+            x => x.Id,
+            x => (
+                x.HasPendingInvitation,
+                Label: x.HasPendingInvitation
+                    ? "回覆邀請"
+                    : x.HasPendingTeamAction
+                        ? x.HasCompletePendingTeam ? "確認整隊報名" : "完成隊伍組建"
+                        : x.RegistrationStage switch
+                        {
+                            TournamentRegistrationStage.CapacityReached => "關閉報名並準備賽程",
+                            TournamentRegistrationStage.Closed => "產生隊伍／賽程",
+                            TournamentRegistrationStage.AwaitingTeamFormation => "處理系統配隊",
+                            TournamentRegistrationStage.ScheduleDraftCreated => "確認賽程並正式開始",
+                            _ => "管理賽事"
+                        }));
+        var actionTournamentIds = matchActionTournamentIds
+            .Concat(tournamentActionById.Keys)
+            .Distinct()
+            .ToArray();
+
         var query = db.Tournaments.AsNoTracking();
         query = filter switch
         {
+            TournamentListFilter.WaitingForMe => query.Where(x => actionTournamentIds.Contains(x.Id)),
             TournamentListFilter.RegistrationOpen => query.Where(x => x.Status == TournamentStatus.RegistrationOpen),
             TournamentListFilter.InProgress => query.Where(x => x.Status == TournamentStatus.InProgress),
             TournamentListFilter.Completed => query.Where(x => x.Status == TournamentStatus.Completed),
@@ -123,25 +193,61 @@ public class TournamentService(AppDbContext db)
         var totalCount = await query.CountAsync();
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
         pageNumber = Math.Min(pageNumber, totalPages);
-        var items = await query
-            .OrderByDescending(x => x.UpdatedAtUtc)
+        var rows = await query
+            .OrderByDescending(x => matchActionTournamentIds.Contains(x.Id))
+            .ThenByDescending(x => actionTournamentIds.Contains(x.Id))
+            .ThenByDescending(x => x.UpdatedAtUtc)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => new TournamentListItem(
+            .Select(x => new
+            {
                 x.Id,
                 x.Name,
                 x.Status,
                 x.RegistrationStage,
-                x.OrganizerUser.DisplayName,
-                x.RulesSnapshot,
-                x.Entries.Count(e => e.Status == TournamentEntryStatus.Registered),
+                OrganizerDisplayName = x.OrganizerUser.DisplayName,
+                x.Mode,
+                x.RegistrationMode,
+                x.Format,
+                x.RuleSet,
+                RuleSummary = x.RulesSnapshot,
+                x.Notes,
+                RegisteredEntryCount = x.Entries.Count(e => e.Status == TournamentEntryStatus.Registered),
                 x.TargetEntryCount,
-                x.Entries.Any(e => e.Status != TournamentEntryStatus.Withdrawn &&
+                IsParticipant = x.Entries.Any(e => e.Status != TournamentEntryStatus.Withdrawn &&
                     (e.IndividualUserId == userId || e.Members.Any(m => m.UserId == userId)) &&
                     (e.Status == TournamentEntryStatus.Registered || x.RegistrationMode == TournamentRegistrationMode.SystemAssignedTeam)),
-                x.OrganizerUserId == userId,
-                x.UpdatedAtUtc))
+                IsOrganizer = x.OrganizerUserId == userId,
+                x.UpdatedAtUtc
+            })
             .ToListAsync();
+        var items = rows.Select(x =>
+        {
+            firstMatchActionByTournament.TryGetValue(x.Id, out var matchAction);
+            tournamentActionById.TryGetValue(x.Id, out var tournamentAction);
+            var hasTournamentAction = tournamentActionById.ContainsKey(x.Id);
+            return new TournamentListItem(
+                x.Id,
+                x.Name,
+                x.Status,
+                x.RegistrationStage,
+                x.OrganizerDisplayName,
+                x.Mode,
+                x.RegistrationMode,
+                x.Format,
+                x.RuleSet,
+                x.RuleSummary,
+                x.Notes,
+                x.RegisteredEntryCount,
+                x.TargetEntryCount,
+                x.IsParticipant,
+                x.IsOrganizer,
+                matchAction is not null || hasTournamentAction,
+                hasTournamentAction && tournamentAction.HasPendingInvitation,
+                matchAction?.MatchId,
+                matchAction?.Label ?? (hasTournamentAction ? tournamentAction.Label : null),
+                x.UpdatedAtUtc);
+        }).ToList();
         return new TournamentListPage(items, pageNumber, totalPages, totalCount);
     }
 
@@ -154,6 +260,167 @@ public class TournamentService(AppDbContext db)
             .ThenInclude(x => x.Members)
         .Include(x => x.Matches)
         .SingleOrDefaultAsync(x => x.Id == tournamentId);
+
+    public async Task<TournamentPublicDetailsViewModel?> GetPublicDetailsAsync(
+        int tournamentId,
+        int userId)
+    {
+        var tournament = await db.Tournaments.AsNoTracking().AsSplitQuery()
+            .Include(x => x.OrganizerUser)
+            .Include(x => x.Entries.Where(e => e.Status == TournamentEntryStatus.Registered))
+                .ThenInclude(x => x.Members)
+            .Include(x => x.Matches).ThenInclude(x => x.Participants)
+            .Include(x => x.Matches).ThenInclude(x => x.Battle).ThenInclude(x => x!.Lineups)
+            .SingleOrDefaultAsync(x => x.Id == tournamentId);
+        if (tournament is null) return null;
+
+        var entries = tournament.Entries
+            .OrderBy(x => x.SchedulePosition ?? int.MaxValue)
+            .ThenBy(x => x.RegisteredAtUtc)
+            .Select(x => new TournamentPublicEntryViewModel(
+                x.Id,
+                x.RegistrationNumber,
+                x.SchedulePosition,
+                x.DisplayNameSnapshot,
+                x.Members.OrderBy(m => m.MemberOrder)
+                    .Select(m => m.DisplayNameSnapshot)
+                    .ToList()))
+            .ToList();
+        var entryById = entries.ToDictionary(x => x.Id);
+        var matchById = tournament.Matches.ToDictionary(x => x.Id);
+
+        string SourceLabel(
+            TournamentParticipantSourceKind? sourceKind,
+            int? sourceReferenceId,
+            int? resolvedEntryId,
+            bool isBye)
+        {
+            if (isBye) return "Bye";
+            if (resolvedEntryId is int entryId && entryById.TryGetValue(entryId, out var entry))
+                return entry.DisplayName;
+            if (sourceKind == TournamentParticipantSourceKind.Entry &&
+                sourceReferenceId is int sourceEntryId && entryById.TryGetValue(sourceEntryId, out var sourceEntry))
+                return sourceEntry.DisplayName;
+            if (sourceReferenceId is int sourceMatchId && matchById.TryGetValue(sourceMatchId, out var sourceMatch))
+                return sourceKind == TournamentParticipantSourceKind.MatchLoser
+                    ? $"對局 #{sourceMatch.SequenceNumber} 敗方"
+                    : $"對局 #{sourceMatch.SequenceNumber} 勝方";
+            return "待賽程決定";
+        }
+
+        static string? ResolutionSummary(TournamentMatch match)
+        {
+            if (match.IsBye)
+                return match.IsSeedQualifier ? "種子資格輪空" : "輪空";
+            if (match.Status == TournamentMatchStatus.Walkover)
+            {
+                if (match.ResolutionReason?.StartsWith("NoShow", StringComparison.Ordinal) == true)
+                {
+                    var reason = match.ResolutionReason.StartsWith("NoShow: ", StringComparison.Ordinal)
+                        ? match.ResolutionReason[8..]
+                        : null;
+                    return string.IsNullOrWhiteSpace(reason) ? "未到判定" : $"未到判定：{reason}";
+                }
+                return match.ResolutionReason == "ParticipationDeclined" ? "拒絕出賽" : "不戰勝";
+            }
+            if (match.Status == TournamentMatchStatus.Forfeited)
+                return string.IsNullOrWhiteSpace(match.ResolutionReason) || match.ResolutionReason == "ParticipantForfeit"
+                    ? "棄權"
+                    : $"棄權：{match.ResolutionReason}";
+            return match.Status switch
+            {
+                TournamentMatchStatus.NotRequired => "無須進行",
+                TournamentMatchStatus.Cancelled => "賽事取消",
+                TournamentMatchStatus.Voided => "結果已撤銷",
+                _ => null
+            };
+        }
+
+        var matches = tournament.Matches.OrderBy(x => x.SequenceNumber).Select(match =>
+        {
+            TournamentPublicBattleViewModel? publicBattle = null;
+            if (match.Battle is { } battle && battle.Lineups.Count > 0)
+            {
+                publicBattle = new TournamentPublicBattleViewModel(
+                    battle.Id,
+                    battle.Status,
+                    battle.ScoreToWin,
+                    battle.SideAScore,
+                    battle.SideBScore,
+                    battle.SideADesignation,
+                    battle.Lineups.OrderBy(x => x.SequenceNo).ThenBy(x => x.PositionNo)
+                        .Select(x => new TournamentPublicLineupPositionViewModel(
+                            x.SequenceNo,
+                            x.PositionNo,
+                            x.PlayerADisplayNameSnapshot,
+                            x.PlayerABeybladeNameSnapshot,
+                            x.PlayerBDisplayNameSnapshot,
+                            x.PlayerBBeybladeNameSnapshot,
+                            x.IsCurrent))
+                        .ToList());
+            }
+
+            var canOpenWorkspace = !match.IsBye &&
+                match.SideAEntryId is not null && match.SideBEntryId is not null &&
+                (tournament.OrganizerUserId == userId || match.Participants.Any(x => x.UserId == userId));
+            return new TournamentPublicMatchViewModel(
+                match.Id,
+                match.Bracket,
+                match.RoundNumber,
+                match.MatchNumber,
+                match.SequenceNumber,
+                match.Status,
+                SourceLabel(match.SideASourceKind, match.SideASourceReferenceId, match.SideAEntryId, false),
+                SourceLabel(match.SideBSourceKind, match.SideBSourceReferenceId, match.SideBEntryId, match.IsBye),
+                match.WinnerEntryId is int winnerId && entryById.TryGetValue(winnerId, out var winner)
+                    ? winner.DisplayName
+                    : null,
+                match.LoserEntryId is int loserId && entryById.TryGetValue(loserId, out var loser)
+                    ? loser.DisplayName
+                    : null,
+                match.IsBye,
+                match.IsSeedQualifier,
+                match.IsResetFinal,
+                match.Status >= TournamentMatchStatus.AwaitingParticipationConfirmation &&
+                    match.Status < TournamentMatchStatus.Completed,
+                canOpenWorkspace,
+                ResolutionSummary(match),
+                match.CompletedAtUtc,
+                publicBattle);
+        }).ToList();
+
+        var pollSource = string.Join('|',
+            Convert.ToBase64String(tournament.Version),
+            string.Join(',', tournament.Matches.OrderBy(x => x.Id).Select(x =>
+                $"{x.Id}:{Convert.ToBase64String(x.Version)}:{(x.Battle is null ? string.Empty : Convert.ToBase64String(x.Battle.Version))}")));
+        var pollToken = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pollSource)));
+        return new TournamentPublicDetailsViewModel(
+            tournament.Id,
+            tournament.Name,
+            tournament.OrganizerUser.DisplayName,
+            tournament.Mode,
+            tournament.RegistrationMode,
+            tournament.Format,
+            tournament.RuleSet,
+            tournament.Status,
+            tournament.RegistrationStage,
+            tournament.TeamSize,
+            tournament.BeybladesPerPlayer,
+            tournament.ScoreToWin,
+            tournament.TargetEntryCount,
+            tournament.RulesSnapshot,
+            tournament.Notes,
+            tournament.CancellationReason,
+            tournament.CreatedAtUtc,
+            tournament.UpdatedAtUtc,
+            tournament.RegistrationClosedAtUtc,
+            tournament.StartedAtUtc,
+            tournament.CompletedAtUtc,
+            tournament.CancelledAtUtc,
+            entries,
+            matches,
+            pollToken);
+    }
 
     public async Task<ServiceResult> GenerateScheduleDraftAsync(int tournamentId, int organizerUserId, int? randomSeed = null)
     {
@@ -369,6 +636,264 @@ public class TournamentService(AppDbContext db)
         return ServiceResult.Success();
     }
 
+    public async Task<ServiceResult> CancelTournamentAsync(int tournamentId, int organizerUserId, string? reason)
+    {
+        var cancellationReason = reason?.Trim();
+        if (cancellationReason?.Length > 500)
+            return ServiceResult.Failure("取消原因不可超過 500 個字元。");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var tournament = await db.Tournaments.AsSplitQuery()
+            .Include(x => x.Invitations)
+            .Include(x => x.Matches).ThenInclude(x => x.Participants)
+            .Include(x => x.Matches).ThenInclude(x => x.Battle).ThenInclude(x => x!.Rounds).ThenInclude(x => x.Events)
+            .SingleOrDefaultAsync(x => x.Id == tournamentId);
+        if (tournament is null) return ServiceResult.Failure("找不到比賽。");
+        if (tournament.OrganizerUserId != organizerUserId) return ServiceResult.Failure("只有主辦方可以取消整場比賽。");
+        if (tournament.Status == TournamentStatus.Cancelled) return ServiceResult.Failure("比賽已經取消。");
+        if (tournament.Status == TournamentStatus.Completed) return ServiceResult.Failure("已完成的比賽不能取消。");
+
+        var now = DateTime.UtcNow;
+        tournament.Status = TournamentStatus.Cancelled;
+        tournament.CancellationReason = string.IsNullOrWhiteSpace(cancellationReason) ? null : cancellationReason;
+        tournament.CancelledAtUtc = now;
+        tournament.UpdatedAtUtc = now;
+        tournament.Version = Guid.NewGuid().ToByteArray();
+
+        foreach (var invitation in tournament.Invitations.Where(x => x.Status == TournamentInvitationStatus.Pending))
+        {
+            invitation.Status = TournamentInvitationStatus.Invalidated;
+            invitation.InvalidatedAtUtc = now;
+        }
+
+        foreach (var match in tournament.Matches)
+        {
+            foreach (var participant in match.Participants.Where(x => x.Status == TournamentParticipationStatus.Pending))
+            {
+                participant.Status = TournamentParticipationStatus.Invalidated;
+                participant.Version = Guid.NewGuid().ToByteArray();
+            }
+
+            if (match.Status is TournamentMatchStatus.Completed or TournamentMatchStatus.Walkover or
+                TournamentMatchStatus.Forfeited or TournamentMatchStatus.Voided or TournamentMatchStatus.NotRequired)
+                continue;
+
+            match.Status = TournamentMatchStatus.Cancelled;
+            match.ResolutionReason = "TournamentCancelled";
+            match.CompletedAtUtc = now;
+            match.UpdatedAtUtc = now;
+            match.Version = Guid.NewGuid().ToByteArray();
+
+            if (match.Battle is not { } battle || battle.Status is BattleStatus.Completed or BattleStatus.Forfeited or BattleStatus.Voided)
+                continue;
+
+            foreach (var round in battle.Rounds.Where(x => x.Status == BattleRoundStatus.InProgress))
+                foreach (var roundEvent in round.Events)
+                {
+                    roundEvent.IsEffective = false;
+                    roundEvent.InvalidationReason = BattleRoundEventInvalidationReason.BattleTerminated;
+                }
+
+            (battle.SideAScore, battle.SideBScore) = BattleRules.CalculateScores(battle.Rounds);
+            battle.Status = BattleStatus.Cancelled;
+            battle.WinningSide = null;
+            battle.WinningPlayerId = null;
+            battle.CompletedAtUtc = now;
+            battle.Version = Guid.NewGuid().ToByteArray();
+        }
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return ServiceResult.Success();
+    }
+
+    public async Task<ServiceResult<TournamentInvitation>> InviteParticipantAsync(
+        int tournamentId,
+        int organizerUserId,
+        string accountOrDisplayName)
+    {
+        var search = accountOrDisplayName?.Trim() ?? string.Empty;
+        if (search.Length == 0)
+            return ServiceResult<TournamentInvitation>.Failure("請輸入 Account 或完整 DisplayName。");
+
+        var tournament = await db.Tournaments.Include(x => x.Entries)
+            .SingleOrDefaultAsync(x => x.Id == tournamentId);
+        if (tournament is null)
+            return ServiceResult<TournamentInvitation>.Failure("找不到比賽。");
+        if (tournament.OrganizerUserId != organizerUserId)
+            return ServiceResult<TournamentInvitation>.Failure("只有主辦方可以邀請參賽者。");
+        if (tournament.Status != TournamentStatus.RegistrationOpen ||
+            tournament.RegistrationStage != TournamentRegistrationStage.Open)
+            return ServiceResult<TournamentInvitation>.Failure("目前不接受新的參賽邀請。");
+        if (tournament.Mode != TournamentMode.Individual ||
+            tournament.RegistrationMode != TournamentRegistrationMode.Individual)
+            return ServiceResult<TournamentInvitation>.Failure("主辦方參賽邀請目前只適用個人賽；團體賽請使用隊伍邀請。");
+        if (tournament.Entries.Count(x => x.Status == TournamentEntryStatus.Registered) >= tournament.TargetEntryCount)
+            return ServiceResult<TournamentInvitation>.Failure("報名名額已滿。");
+
+        var accountMatch = await db.Users.SingleOrDefaultAsync(x => x.Account == search);
+        var displayMatches = accountMatch is null
+            ? await db.Users.Where(x => x.DisplayName == search).Take(2).ToListAsync()
+            : [];
+        if (accountMatch is null && displayMatches.Count > 1)
+            return ServiceResult<TournamentInvitation>.Failure("有多位玩家使用此 DisplayName，請改用 Account。");
+        var invitedUser = accountMatch ?? displayMatches.SingleOrDefault();
+        if (invitedUser is null)
+            return ServiceResult<TournamentInvitation>.Failure("找不到指定玩家。");
+        if (tournament.Entries.Any(x =>
+                x.IndividualUserId == invitedUser.Id && x.Status == TournamentEntryStatus.Registered))
+            return ServiceResult<TournamentInvitation>.Failure("該玩家已經報名這場比賽。");
+        if (await db.TournamentInvitations.AnyAsync(x =>
+                x.TournamentId == tournamentId &&
+                x.InvitedUserId == invitedUser.Id &&
+                x.Type == TournamentInvitationType.Tournament &&
+                x.Status == TournamentInvitationStatus.Pending))
+            return ServiceResult<TournamentInvitation>.Failure("已向該玩家發出待處理的參賽邀請。");
+
+        var invitation = new TournamentInvitation
+        {
+            TournamentId = tournamentId,
+            TournamentEntryId = null,
+            InvitedUserId = invitedUser.Id,
+            InvitedByUserId = organizerUserId,
+            Type = TournamentInvitationType.Tournament,
+            Status = TournamentInvitationStatus.Pending,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        db.TournamentInvitations.Add(invitation);
+        try
+        {
+            await db.SaveChangesAsync();
+            return ServiceResult<TournamentInvitation>.Success(invitation);
+        }
+        catch (DbUpdateException)
+        {
+            return ServiceResult<TournamentInvitation>.Failure("邀請狀態發生衝突，請重新整理後再試。");
+        }
+    }
+
+    public Task<TournamentInvitation?> GetPendingParticipantInvitationAsync(int tournamentId, int userId) =>
+        db.TournamentInvitations.AsNoTracking()
+            .Include(x => x.InvitedByUser)
+            .Where(x => x.TournamentId == tournamentId &&
+                x.InvitedUserId == userId &&
+                x.Type == TournamentInvitationType.Tournament &&
+                x.Status == TournamentInvitationStatus.Pending)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+
+    public async Task<ServiceResult> RespondToTournamentInvitationAsync(
+        int invitationId,
+        int invitedUserId,
+        bool accept)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var invitation = await db.TournamentInvitations
+            .Include(x => x.InvitedUser)
+            .Include(x => x.Tournament).ThenInclude(x => x.Entries)
+            .SingleOrDefaultAsync(x => x.Id == invitationId);
+        if (invitation is null || invitation.InvitedUserId != invitedUserId)
+            return ServiceResult.Failure("找不到你的參賽邀請。");
+        if (invitation.Type != TournamentInvitationType.Tournament ||
+            invitation.Status != TournamentInvitationStatus.Pending)
+            return ServiceResult.Failure("邀請已處理或失效。");
+
+        var now = DateTime.UtcNow;
+        if (!accept)
+        {
+            invitation.Status = TournamentInvitationStatus.Declined;
+            invitation.RespondedAtUtc = now;
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Success();
+        }
+
+        var tournament = invitation.Tournament;
+        if (tournament.Status != TournamentStatus.RegistrationOpen ||
+            tournament.RegistrationStage != TournamentRegistrationStage.Open ||
+            tournament.Mode != TournamentMode.Individual ||
+            tournament.RegistrationMode != TournamentRegistrationMode.Individual)
+        {
+            invitation.Status = TournamentInvitationStatus.Invalidated;
+            invitation.InvalidatedAtUtc = now;
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Failure("這場比賽目前不接受邀請加入。");
+        }
+
+        var activeCount = tournament.Entries.Count(x => x.Status == TournamentEntryStatus.Registered);
+        if (activeCount >= tournament.TargetEntryCount)
+        {
+            invitation.Status = TournamentInvitationStatus.Invalidated;
+            invitation.InvalidatedAtUtc = now;
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Failure("報名名額已滿，邀請已失效。");
+        }
+
+        var entry = tournament.Entries.SingleOrDefault(x => x.IndividualUserId == invitedUserId);
+        if (entry?.Status == TournamentEntryStatus.Registered)
+        {
+            invitation.Status = TournamentInvitationStatus.Invalidated;
+            invitation.InvalidatedAtUtc = now;
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Failure("你已經報名這場比賽，邀請已失效。");
+        }
+
+        var registrationNumber = await CreateUniqueRegistrationNumberAsync(tournament.Id);
+        if (entry is null)
+        {
+            entry = new TournamentEntry
+            {
+                TournamentId = tournament.Id,
+                IndividualUserId = invitedUserId,
+                DisplayNameSnapshot = invitation.InvitedUser.DisplayName,
+                RegistrationNumber = registrationNumber,
+                Status = TournamentEntryStatus.Registered,
+                CreatedAtUtc = now
+            };
+            db.TournamentEntries.Add(entry);
+        }
+        else
+        {
+            entry.RegistrationNumber = registrationNumber;
+            entry.WithdrawnAtUtc = null;
+        }
+
+        entry.Status = TournamentEntryStatus.Registered;
+        entry.RegisteredAtUtc = now;
+        entry.UpdatedAtUtc = now;
+        invitation.Status = TournamentInvitationStatus.Accepted;
+        invitation.RespondedAtUtc = now;
+        var capacityReached = activeCount + 1 == tournament.TargetEntryCount;
+        tournament.RegistrationStage = capacityReached
+            ? TournamentRegistrationStage.CapacityReached
+            : TournamentRegistrationStage.Open;
+        tournament.UpdatedAtUtc = now;
+        tournament.Version = Guid.NewGuid().ToByteArray();
+        await InvalidatePendingTournamentInvitationsAsync(
+            tournament.Id, now, invitedUserId: invitedUserId, exceptInvitationId: invitation.Id);
+        if (capacityReached)
+            await InvalidatePendingTournamentInvitationsAsync(
+                tournament.Id, now, exceptInvitationId: invitation.Id);
+
+        try
+        {
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Success();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ServiceResult.Failure("報名狀態剛被其他操作更新，請重新整理後再試。");
+        }
+        catch (DbUpdateException)
+        {
+            return ServiceResult.Failure("邀請接受未完成，可能是名額或 Entry 發生衝突，請重新整理後再試。");
+        }
+    }
+
     public async Task<ServiceResult> RegisterIndividualAsync(int tournamentId, int userId)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -411,10 +936,14 @@ public class TournamentService(AppDbContext db)
         entry.RegisteredAtUtc = now;
         entry.UpdatedAtUtc = now;
         tournament.UpdatedAtUtc = now;
-        tournament.RegistrationStage = activeCount + 1 == tournament.TargetEntryCount
+        var capacityReached = activeCount + 1 == tournament.TargetEntryCount;
+        tournament.RegistrationStage = capacityReached
             ? TournamentRegistrationStage.CapacityReached
             : TournamentRegistrationStage.Open;
         tournament.Version = Guid.NewGuid().ToByteArray();
+        await InvalidatePendingTournamentInvitationsAsync(tournamentId, now, invitedUserId: userId);
+        if (capacityReached)
+            await InvalidatePendingTournamentInvitationsAsync(tournamentId, now);
         try
         {
             await db.SaveChangesAsync();
@@ -480,8 +1009,65 @@ public class TournamentService(AppDbContext db)
         tournament.RegistrationClosedAtUtc = now;
         tournament.UpdatedAtUtc = now;
         tournament.Version = Guid.NewGuid().ToByteArray();
+        await InvalidatePendingInvitationsAsync(tournamentId, now);
         await db.SaveChangesAsync();
         return ServiceResult.Success();
+    }
+
+    public async Task<ServiceResult> ReopenRegistrationAsync(int tournamentId, int organizerUserId)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var tournament = await db.Tournaments
+            .Include(x => x.Entries).ThenInclude(x => x.Members)
+            .Include(x => x.Matches)
+            .SingleOrDefaultAsync(x => x.Id == tournamentId);
+        if (tournament is null)
+            return ServiceResult.Failure("找不到比賽。");
+        if (tournament.OrganizerUserId != organizerUserId)
+            return ServiceResult.Failure("只有主辦方可以重新開放報名。");
+        if (tournament.Status != TournamentStatus.RegistrationOpen)
+            return ServiceResult.Failure("比賽正式開始、完成或取消後不能重新開放報名。");
+        if (tournament.RegistrationStage is TournamentRegistrationStage.AwaitingStart)
+            return ServiceResult.Failure("比賽已進入正式開始流程，不能重新開放報名。");
+        if (tournament.RegistrationStage is TournamentRegistrationStage.Open or TournamentRegistrationStage.CapacityReached)
+            return ServiceResult.Success();
+        if (tournament.RegistrationStage is not (
+                TournamentRegistrationStage.Closed or
+                TournamentRegistrationStage.AwaitingTeamFormation or
+                TournamentRegistrationStage.ScheduleDraftCreated))
+            return ServiceResult.Failure("目前狀態不能重新開放報名。");
+
+        if (tournament.Matches.Count > 0 || tournament.Entries.Any(x => x.SchedulePosition is not null))
+        {
+            try
+            {
+                await ClearScheduleAsync(tournament);
+            }
+            catch (InvalidOperationException)
+            {
+                return ServiceResult.Failure("賽程已有正式 Battle，不能重新開放報名。");
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        tournament.RegistrationStage = GetReopenedRegistrationStage(tournament);
+        tournament.RegistrationClosedAtUtc = null;
+        tournament.UpdatedAtUtc = now;
+        tournament.Version = Guid.NewGuid().ToByteArray();
+        try
+        {
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Success();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ServiceResult.Failure("報名狀態剛被其他操作更新，請重新整理後再試。");
+        }
+        catch (DbUpdateException)
+        {
+            return ServiceResult.Failure("重新開放報名時資料發生衝突，請重新整理後再試。");
+        }
     }
 
     public async Task<ServiceResult> RegisterForSystemPairingAsync(int tournamentId, int userId)
@@ -654,24 +1240,6 @@ public class TournamentService(AppDbContext db)
         tournament.Version = Guid.NewGuid().ToByteArray();
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
-        return ServiceResult.Success();
-    }
-
-    public async Task<ServiceResult> ReopenSystemPairingRegistrationAsync(int tournamentId, int organizerUserId)
-    {
-        var tournament = await db.Tournaments.Include(x => x.Entries).ThenInclude(x => x.Members).SingleOrDefaultAsync(x => x.Id == tournamentId);
-        if (tournament is null) return ServiceResult.Failure("找不到比賽。");
-        if (tournament.OrganizerUserId != organizerUserId) return ServiceResult.Failure("只有主辦方可以重新開放報名。");
-        if (tournament.Status != TournamentStatus.RegistrationOpen || tournament.RegistrationMode != TournamentRegistrationMode.SystemAssignedTeam ||
-            tournament.RegistrationStage != TournamentRegistrationStage.AwaitingTeamFormation)
-            return ServiceResult.Failure("目前狀態不能重新開放報名。");
-        var activePlayers = tournament.Entries.Where(x => x.Status != TournamentEntryStatus.Withdrawn).Sum(x => x.Members.Count);
-        tournament.RegistrationStage = activePlayers >= tournament.TargetEntryCount * tournament.TeamSize
-            ? TournamentRegistrationStage.CapacityReached
-            : TournamentRegistrationStage.Open;
-        tournament.UpdatedAtUtc = DateTime.UtcNow;
-        tournament.Version = Guid.NewGuid().ToByteArray();
-        await db.SaveChangesAsync();
         return ServiceResult.Success();
     }
 
@@ -910,11 +1478,14 @@ public class TournamentService(AppDbContext db)
         entry.Status = TournamentEntryStatus.Registered;
         entry.RegisteredAtUtc = now;
         entry.UpdatedAtUtc = now;
-        entry.Tournament.RegistrationStage = activeCount + 1 == entry.Tournament.TargetEntryCount
+        var capacityReached = activeCount + 1 == entry.Tournament.TargetEntryCount;
+        entry.Tournament.RegistrationStage = capacityReached
             ? TournamentRegistrationStage.CapacityReached
             : TournamentRegistrationStage.Open;
         entry.Tournament.UpdatedAtUtc = now;
         entry.Tournament.Version = Guid.NewGuid().ToByteArray();
+        if (capacityReached)
+            await InvalidatePendingInvitationsAsync(tournamentId, now);
         try
         {
             await db.SaveChangesAsync();
@@ -1088,5 +1659,57 @@ public class TournamentService(AppDbContext db)
                 return candidate;
         }
         throw new InvalidOperationException("無法產生唯一參賽編號。");
+    }
+
+    private async Task InvalidatePendingTournamentInvitationsAsync(
+        int tournamentId,
+        DateTime invalidatedAtUtc,
+        int? invitedUserId = null,
+        int? exceptInvitationId = null)
+    {
+        var query = db.TournamentInvitations.Where(x =>
+            x.TournamentId == tournamentId &&
+            x.Type == TournamentInvitationType.Tournament &&
+            x.Status == TournamentInvitationStatus.Pending);
+        if (invitedUserId is int userId)
+            query = query.Where(x => x.InvitedUserId == userId);
+        if (exceptInvitationId is int invitationId)
+            query = query.Where(x => x.Id != invitationId);
+        foreach (var invitation in await query.ToListAsync())
+        {
+            invitation.Status = TournamentInvitationStatus.Invalidated;
+            invitation.InvalidatedAtUtc = invalidatedAtUtc;
+        }
+    }
+
+    private async Task InvalidatePendingInvitationsAsync(int tournamentId, DateTime invalidatedAtUtc)
+    {
+        var invitations = await db.TournamentInvitations.Where(x =>
+            x.TournamentId == tournamentId &&
+            x.Status == TournamentInvitationStatus.Pending).ToListAsync();
+        foreach (var invitation in invitations)
+        {
+            invitation.Status = TournamentInvitationStatus.Invalidated;
+            invitation.InvalidatedAtUtc = invalidatedAtUtc;
+        }
+    }
+
+    private static TournamentRegistrationStage GetReopenedRegistrationStage(Tournament tournament)
+    {
+        if (tournament.RegistrationMode == TournamentRegistrationMode.SystemAssignedTeam)
+        {
+            var activePlayers = tournament.Entries
+                .Where(x => x.Status != TournamentEntryStatus.Withdrawn)
+                .Sum(x => x.Members.Count);
+            var playerCapacity = tournament.TargetEntryCount * tournament.TeamSize!.Value;
+            return activePlayers >= playerCapacity
+                ? TournamentRegistrationStage.CapacityReached
+                : TournamentRegistrationStage.Open;
+        }
+
+        var activeEntries = tournament.Entries.Count(x => x.Status == TournamentEntryStatus.Registered);
+        return activeEntries >= tournament.TargetEntryCount
+            ? TournamentRegistrationStage.CapacityReached
+            : TournamentRegistrationStage.Open;
     }
 }

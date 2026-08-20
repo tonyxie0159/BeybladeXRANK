@@ -5,6 +5,8 @@
 > 核准日期：2026-08-19<br>
 > 本文件是賽事房間、報名、賽程生成、單人賽與團體賽的實作及驗收依據。
 
+本文件是現行有效的目標規格，不以「目前畫面已存在」作為生效條件。尚未完成的有效需求統一列在 `08-Development/development-plan.md`；不得因程式暫缺就引用舊版 Battle、欄位或 API 取代。
+
 ## 1. 名詞與共通原則
 
 - **Tournament（比賽／賽事）**：包含報名、隊伍、賽程及多場對戰的完整活動。
@@ -108,8 +110,10 @@
 - `Forfeited`
 - `Walkover`
 - `Voided`
+- `NotRequired`
+- `Cancelled`
 
-每個 Tournament 同一時間最多只有一個 `LineupLocked`、`SideSelection`、`InProgress` 或 `VictoryPendingCompletion` Match。不同 Tournament 可以同時進行。
+每個 Tournament 同一時間最多只有一個從 `AwaitingParticipationConfirmation` 到 `VictoryPendingCompletion` 的 active Match；其他 Match 必須等待參賽來源或輪到其場次。不同 Tournament 可以同時進行。
 
 ## 5. 比賽房間列表與詳情
 
@@ -172,6 +176,7 @@
 - 額滿後停止接受新報名，但不自動產生賽程或開賽。
 - 主辦方可在未額滿時關閉報名並提早開始。
 - 正式開始前有人退出，既有賽程草稿失效；主辦方可重新開放報名、邀請玩家、重新配隊及重新產生賽程。
+- 重新開放會清除尚未正式開始的 Match 與 SchedulePosition；已失效邀請保留歷史但不自動恢復。
 - 正式開始後不可重開報名、替換一般隊員或改變 Entry。
 
 ## 7. 團體組隊
@@ -229,6 +234,7 @@
 - 接受後進入本場 Lineup。
 - 拒絕等同棄權；團體中任一必要隊員拒絕即整隊棄權。
 - 未回應不自動倒數判負；主辦方可經二次確認手動判定未到棄權並填選填原因。
+- 未到判定只接受本場仍有必要選手為 Pending 的確定 Entry；成功後將其未回覆成員標記為 NoShow、保存 Winner／Loser 與原因、形成 Walkover 並只推進一次，不建立 Battle。
 - 玩家同時收到不同 Tournament 通知時可自行處理；系統不自動判負，可提示主辦方該玩家目前可能在其他對戰。
 
 所有流程狀態必須持久化於後端。玩家或裁判可以關閉、刷新、登出、查看其他頁面後，從比賽詳情返回同一 Battle 繼續；不得重建 Battle、清除 Lineup、比分、Round、Event、fault count 或重複最後操作。
@@ -268,7 +274,7 @@
 7. 完成整組且雙方未達門檻，進入重排；每位玩家提交自己的原陀螺新順序，代表人提交本隊成員新順序，全部提交後直接生效，不再額外確認。
 8. 團體 Battle 開始後任一必要隊員無法繼續，整隊棄權；不允許隊友代打或臨時替補。
 
-每個 Lineup Position 與 Round 必須保存雙方實際 PlayerId、BeybladeId、名稱 Snapshot、隊伍 Side、SequenceNo 及 PositionNo。
+每個 Lineup Position 與 Round 必須保存雙方實際 PlayerId、BeybladeId、名稱 Snapshot、SequenceNo 及 PositionNo。隊伍 B／X Side 由該 Battle 開賽後不可變的 `SideADesignation` 與 Match Side A/B Entry 推導，不在每個 Round 重複保存。
 
 ## 13. 雙人團體 Battle
 
@@ -306,20 +312,23 @@
 - 每場勝者進入預先連結的下一格，敗者淘汰。
 - 總場數必須為有效 Entry 數減一。
 - Bye 與種子資格賽晉級目的地在正式開始前固定。
-- 不設季軍戰；未進決賽者的名次依淘汰輪次並列，只有需要冠軍判定時才加賽。
+- 不設季軍戰；冠軍、決賽敗方依序為第一、第二名，未進決賽者依淘汰輪次使用競賽排名並列（例如 1、2、3、3、5），只有需要冠軍判定時才加賽。
 
 ### 15.2 雙敗
 
 - Entry 第二敗後淘汰。
 - 勝部敗者依預先固定映射進入敗部，不在進行中隨機配對。
 - 使用 Reset Final：敗部冠軍第一次擊敗未敗的勝部冠軍後，兩者各一敗，再打一場決勝。
+- 冠軍與第二名以實際決勝的 Grand Final／Reset Final 判定；其餘 Entry 依第二敗所在敗部輪次使用競賽排名並列。
 - 不套用單淘汰種子資格賽；非 2 次方使用雙敗專用 Bye 模板。
 - 勝部與敗部依場次順序交錯，優先選擇雙方已確定且避免同一 Entry 立即連續出賽的合法 Match。
+
+單淘汰與雙敗只在 Tournament 為 `Completed` 後公布正式名次。Bye 只代表晉級；Walkover 可決定晉級或淘汰，但兩者都不得建立虛構比分。
 
 ### 15.3 單循環
 
 - 每兩個 Entry 對戰一次。
-- 排名依序為：勝場；僅兩隊同分時的直接對戰；三隊以上同分時同分群組得失分差；全賽事得失分差；總得分；仍相同則只在影響名次判定時加賽。
+- 排名依序為：勝場；僅兩隊同分時的直接對戰；三隊以上同分時同分群組得失分差；全賽事得失分差；總得分；仍相同且並列第一影響冠軍時加賽，其他同分維持並列。
 - Walkover 計排名勝場但不虛構比分，不納入得失分差。
 
 ### 15.4 瑞士輪
@@ -329,7 +338,16 @@
 - 後續優先配對相同勝場、避免重複對手；無法避免時選擇戰績最接近的合法對手。
 - 奇數 Entry 每輪一個 Bye；優先從尚未 Bye 且當前戰績較低者中隨機抽選。除非所有仍在賽者都曾 Bye，否則同一 Entry 不得再次 Bye。
 - Bye 計排名勝場，但不建立 Battle、不計個人或陀螺勝敗。
-- 最終排名依序為：勝場、Buchholz（所有對手勝場總和）、對手勝率、總得失分差、總得分；仍相同可並列，只有冠軍相關時加賽。
+- 最終排名依序為：勝場、Buchholz（所有對手勝場總和）、對手勝率、總得失分差、總得分；仍相同可並列，只有並列第一影響冠軍時加賽。
+
+### 15.5 循環／瑞士冠軍加賽
+
+- 規定例行 Match／瑞士輪全部完成後才判斷；未完成規定輪次不得提早建立加賽。
+- 兩名以上冠軍候選在全部 tie-break 後仍完全相同時，由系統自動建立獨立 `Playoff` bracket，Client 或主辦方不可自行指定名單。
+- Playoff 使用隨機且保存結果的平衡單淘汰樹；非 2 次方人數以首輪輪空補成後續 2 次方，不建立假 Battle 或假比分。
+- Tournament 在 Playoff 完成前保持 `InProgress`；Playoff 決勝勝者為冠軍，其餘原第一名候選改列第二名並依原同分狀態並列，後續競賽排名不變。
+- Playoff Battle 可計入玩家／陀螺實際戰績，但不得加入原循環／瑞士勝場、Buchholz、對手勝率、得失分或總得分，避免反向改寫建立加賽的判定基礎。
+- Playoff 建立後不得直接修改或重開例行對局，避免已保存的加賽名單與排名基礎不一致；Playoff 對局本身的 Revision／Void 仍依一般下游逆序保護規則處理。
 
 ## 16. 棄權、取消與撤銷
 
@@ -348,7 +366,7 @@
 ### 16.3 取消整個 Tournament
 
 - Tournament 進入 `Cancelled` 並保留列表、規則、備註、完成對局及取消前進度。
-- 取消前合法完成的 Battle 繼續進入快速／個人／團體相應戰績；完成 Round 繼續進入合併陀螺戰績。
+- 取消前合法完成的 Battle 繼續進入 Tournament 個人／團體相應戰績；完成 Round 繼續進入合併陀螺戰績。
 - 未完成 Battle 不產生整場勝敗；其中已完成 Round 可進入陀螺及團體個人小局紀錄，未完成 Round 排除。
 - 這與取消快速對戰後硬刪 aggregate 且完全不計戰績的既有規則不同。
 
@@ -356,7 +374,7 @@
 
 - Tournament Battle 因誤開或需重打時標記 `Voided`，保存原因及 audit，不與取消 Tournament 或棄權共用語意。
 - 原 Battle 的 Round 與 Event 不納入正式統計。
-- 建立新 Battle，玩家重新接受並重新選擇陀螺。
+- 清除原 Match 的出賽確認與私密 Lineup，重新通知；必要玩家重新接受並選螺後才建立替代 Battle。
 
 ## 17. 修正結果與下游保護
 
@@ -376,10 +394,13 @@
 
 三者分開計算及顯示，不合成主要個人勝率。團體賽再分為隊伍結果與玩家實際小局表現，不能混成一個百分比。
 
+個人分項另依開賽前鎖定的 B／X Side 計算各自勝敗與勝率，並提供來源、Side、勝率、得失分、得失分差、B Side 勝率及 X Side 勝率的 Server-side 篩選／排序。團體隊員在隊伍結果與實際小局均繼承所屬 Entry 的 B／X Side。
+
 ### 18.2 陀螺戰績
 
 - 預設合併快速對戰、個人賽、團體賽及取消 Tournament 前的有效完成 Round。
 - 提供全部／快速對戰／個人賽／團體賽篩選及各來源樣本數。
+- 提供全部／B Side／X Side 篩選、各 Side 樣本數、B Side 勝率與 X Side 勝率排序。
 - 以 Round 為核心計算小局勝敗、得失分、平均每局得失分、ResultType、LaunchFault 與對手陀螺對位。
 - 不以不同勝利門檻的整場總分直接比較配置，不建立強弱排行榜。
 - 一個 BeybladeId 代表固定配置；實際配置改變應建立新 Beyblade，單純修正顯示名稱才使用 Rename。
@@ -391,11 +412,15 @@
 
 - `Tournament`：模式、賽制、團體人數、報名方式、規則方案、狀態、主辦方、目標數量、備註、時間及 concurrency token。
 - `TournamentEntry`：參賽編號、賽程位置、顯示 Snapshot、個人或隊伍。
-- `TournamentEntryMember`：UserId、成員順序、代表人／本場對戰代表人與 DisplayName Snapshot。
+- `TournamentEntryMember`：UserId、成員順序、報名代表人與 DisplayName Snapshot；本場對戰代表人保存在 `TournamentMatchParticipant.IsMatchRepresentative`。
 - `TournamentInvitation`：參賽或組隊邀請、狀態及時間。
 - `TournamentMatch`：round、match、sequence、雙方 Entry、Winner/Loser、勝敗去向、Battle、Bye／Walkover／ResetFinal 及 concurrency token。
-- `Battle`：來源類型（Quick／TournamentIndividual／TournamentTeam）、ScoreToWin、TournamentMatchId、Side 分數、WinningSide。
+- `Battle`：來源類型（Quick／TournamentIndividual／TournamentTeam）、ScoreToWin、TournamentMatchId、Side 分數、SideADesignation、WinningSide。
 - `BattleLineup`／`BattleRound`：雙方實際 PlayerId、BeybladeId、Snapshot、SequenceNo 與 PositionNo。
+
+公開詳情使用專用唯讀 projection，只包含 Registered Entry、完整賽程、Winner／Loser、有效 Battle 分數／Side 及已物化 BattleLineup。任一必要提交尚未完成時，不得載入或回傳 BattleLineupSelection、BattleTeamOrderSelection；spectator 不因讀取公開賽程而取得 private Match workspace。
+
+List／Details／Match 的 polling 只能使用經授權 GET 查詢最小變更 token；token 改變後重新 GET 畫面，不自動送出任何狀態變更。
 
 以下操作必須交易化並具 concurrency protection：
 
@@ -444,14 +469,9 @@ Client 不可提交任意分數、勝方、隊伍歸屬、ScoreToWin 或下一�
 - Voided 重開對局不進入統計。
 - 快速、個人、團體玩家戰績分離；陀螺總覽合併且可依來源篩選。
 
-## 21. 建議開發順序
+## 21. 實作與驗收追蹤
 
-1. 建立純領域賽程模型及單淘汰、雙敗、循環、瑞士輪測試。
-2. 建立 Tournament、Entry、Member、Invitation、Match 資料表與 Migration。
-3. 將 Battle 勝利門檻、來源模式、Side、實際 Player 與可變 Position 數量一般化。
-4. 完成列表、建立、報名、組隊、邀請、退出及正式鎖定。
-5. 完成單人 Tournament Battle、自動通知、持久化返回及賽程推進。
-6. 完成雙人六顆／四顆與三人三顆團體 Battle。
-7. 完成取消、棄權、撤銷、Revision 與下游保護。
-8. 完成玩家分類戰績、合併陀螺戰績及模式篩選。
-9. 完成手機／平板 UI、並行安全及完整驗收。
+- 已完成與自動測試覆蓋：以 `08-Development/acceptance-tests.md` 為準。
+- 尚未完成的功能、優先級及 PR 切分：以 `08-Development/development-plan.md` 為準。
+- 本文件只定義規則，不以刪除需求、降低隱私或改回舊資料模型的方式配合暫時實作。
+- 每個功能 PR 都必須增加對應的 Domain／Service regression test；UI 流程另以 HTTP／瀏覽器或明確人工驗收補證據。

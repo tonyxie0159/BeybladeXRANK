@@ -1,6 +1,8 @@
 # Beyblade Record System
 
-手機／平板優先的戰鬥陀螺 1v1 戰績工具，使用 ASP.NET Core Razor Pages、EF Core 與 SQLite。
+手機／平板優先的戰鬥陀螺快速對戰、Tournament 與戰績工具，使用 ASP.NET Core Razor Pages、EF Core 與 SQLite。
+
+有效產品與工程規格位於上層 `Docs/`；規格入口為 `Docs/README.md`，實作差距與下一步位於 `Docs/08-Development/development-plan.md`。README 只說明執行方式，不覆寫規格。
 
 ## 本機執行
 
@@ -8,7 +10,7 @@
 dotnet run --project src/BeybladeRecordSystem --urls http://localhost:8080
 ```
 
-開啟 <http://localhost:8080>。首次啟動會自動套用 EF Core migration，資料庫位於 `src/BeybladeRecordSystem/data/beyblade.db`。
+開啟 <http://localhost:8080>。首次啟動會自動套用 EF Core migration，資料庫與登入金鑰位於專案根目錄的 `data/`；此目錄已由 Git 忽略。
 
 ## Docker
 
@@ -27,3 +29,14 @@ cloudflared tunnel --url http://localhost:8080
 ```
 
 此指令會輸出一個臨時 HTTPS URL，適合測試與短期分享，不是正式 SLA 等級部署。
+
+正式外部使用前仍須依 `Docs/09-Deployment/cloudflare-tunnel.md` 完成 forwarded headers、Secure Cookie 與瀏覽器驗收；產生 HTTPS URL 本身不代表部署已通過。
+
+## 驗證
+
+```powershell
+dotnet test BeybladeRecordSystem.slnx
+docker compose config --quiet
+```
+
+`docker compose config` 只驗證 YAML；image build、migration、restart persistence、LAN 與 Tunnel 必須另行實測。

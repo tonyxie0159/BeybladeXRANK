@@ -1,10 +1,12 @@
 @page
 @model BeybladeRecordSystem.Pages.Tournaments.IndexModel
+@using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Domain.Tournaments
 @using BeybladeRecordSystem.Services
 @{ ViewData["Title"] = "比賽房間"; }
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1>比賽房間</h1>
-    <a asp-page="Create" class="btn btn-primary">建立比賽</a>
+    <div class="d-flex gap-2"><a asp-page="Index" asp-route-filter="@Model.Filter" asp-route-pageNumber="@Model.PageNumber" class="btn btn-outline-secondary">手動刷新</a><a asp-page="Create" class="btn btn-primary">建立比賽</a></div>
 </div>
 <form method="get" class="row g-2 mb-3">
     <div class="col-sm-8 col-md-5">
@@ -19,15 +21,48 @@
 <div class="row g-3">
 @foreach (var item in Model.Result.Items)
 {
+    var modeLabel = item.Mode == TournamentMode.Individual ? "個人賽" : "團體賽";
+    var registrationLabel = item.RegistrationMode switch
+    {
+        TournamentRegistrationMode.Individual => "個人報名",
+        TournamentRegistrationMode.CompleteTeam => "整隊報名",
+        TournamentRegistrationMode.SystemAssignedTeam => "系統配隊",
+        _ => item.RegistrationMode.ToString()
+    };
+    var formatLabel = item.Format switch
+    {
+        TournamentFormat.SingleElimination => "單淘汰",
+        TournamentFormat.DoubleElimination => "雙敗淘汰",
+        TournamentFormat.RoundRobin => "單循環",
+        TournamentFormat.Swiss => "瑞士輪",
+        _ => item.Format.ToString()
+    };
     <div class="col-12">
         <article class="card"><div class="card-body">
             <div class="d-flex flex-wrap justify-content-between gap-2">
                 <div><h2 class="h5 mb-1">@item.Name</h2><div class="text-muted">主辦：@item.OrganizerDisplayName</div></div>
                 <div><span class="badge text-bg-primary">@item.Status</span> <span class="badge text-bg-secondary">@item.RegistrationStage</span></div>
             </div>
-            <p class="my-2">@item.RuleSummary</p>
-            <div class="small mb-3">有效報名：@item.RegisteredEntryCount / @item.TargetEntryCount @if (item.IsOrganizer) { <span class="badge text-bg-warning">我主辦的</span> } @if (item.IsParticipant) { <span class="badge text-bg-success">已參加</span> }</div>
-            <a asp-page="Details" asp-route-id="@item.Id" class="btn btn-outline-primary">查看詳情</a>
+            <div class="d-flex flex-wrap gap-1 my-2">
+                <span class="badge text-bg-light">@modeLabel</span>
+                <span class="badge text-bg-light">@registrationLabel</span>
+                <span class="badge text-bg-light">@formatLabel</span>
+                <span class="badge text-bg-light">@TournamentRuleCatalog.Get(item.RuleSet).DisplayName</span>
+            </div>
+            <p class="mb-1">@item.RuleSummary</p>
+            @if (!string.IsNullOrWhiteSpace(item.Notes)) { <p class="small text-muted mb-2">備註：@item.Notes</p> }
+            <div class="small mb-3">有效報名：@item.RegisteredEntryCount / @item.TargetEntryCount @if (item.IsOrganizer) { <span class="badge text-bg-warning">主辦方</span> } @if (item.IsParticipant) { <span class="badge text-bg-success">參賽者</span> } @if (item.HasPendingAction) { <span class="badge text-bg-danger">@item.PendingActionLabel</span> }</div>
+            <div class="d-flex flex-wrap gap-2">
+                @if (item.ActionMatchId is int actionMatchId)
+                {
+                    <a asp-page="Match" asp-route-id="@actionMatchId" class="btn btn-primary">@item.PendingActionLabel</a>
+                    <a asp-page="Details" asp-route-id="@item.Id" class="btn btn-outline-primary">賽事詳情</a>
+                }
+                else
+                {
+                    <a asp-page="Details" asp-route-id="@item.Id" class="btn @(item.HasPendingAction ? "btn-primary" : "btn-outline-primary")">@(item.PendingActionLabel ?? (item.IsOrganizer ? "管理賽事" : item.IsParticipant ? "參賽詳情" : "查看詳情"))</a>
+                }
+            </div>
         </div></article>
     </div>
 }
@@ -40,4 +75,26 @@
             <li class="page-item @(pageNumber == Model.Result.PageNumber ? "active" : null)"><a class="page-link" asp-route-pageNumber="@pageNumber" asp-route-filter="@Model.Filter">@pageNumber</a></li>
         }
     </ul></nav>
+}
+<div id="tournament-list-poll-state" data-token="@Model.PollToken" hidden></div>
+
+@section Scripts {
+<script>
+(() => {
+    const state = document.getElementById('tournament-list-poll-state');
+    if (!state) return;
+    const initialToken = state.dataset.token;
+    const pollUrl = new URL(window.location.href);
+    pollUrl.searchParams.set('handler', 'Poll');
+    window.setInterval(async () => {
+        if (document.hidden) return;
+        try {
+            const response = await fetch(pollUrl, { method: 'GET', cache: 'no-store', headers: { 'Accept': 'application/json' } });
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (payload.token && payload.token !== initialToken) window.location.reload();
+        } catch { }
+    }, 20000);
+})();
+</script>
 }

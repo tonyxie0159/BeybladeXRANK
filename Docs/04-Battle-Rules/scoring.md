@@ -1,67 +1,71 @@
 # 計分規則
 
+本規則適用快速與 Tournament Battle；差異只來自 Battle 建立時鎖定的 `ScoreToWin` 與 Lineup 配對數量。
+
 ## BattleResult
 
-| ResultType | Score |
-|---|---:|
-| SpinFinish | 1 |
-| KnockOut | 2 |
-| Burst | 2 |
-| Extreme | 3 |
+| ResultType | 中文名稱 | ScoreAwarded |
+|---|---|---:|
+| SpinFinish | 轉停勝利 | 1 |
+| KnockOut | 擊飛勝利 | 2 |
+| Burst | 爆裂勝利 | 2 |
+| Extreme | 極限勝利 | 3 |
 
-Score 由後端唯一決定。
-
-Client 不可提交任意分數。
-
-例如 Client 只能送：
-
-`ResultType = Burst`
-
-後端決定：
-
-`ScoreAwarded = 2`
+Client 只能提交 WinnerPlayerId 與 ResultType 的操作意圖。Server 必須驗證操作者、Battle、Round、參賽玩家及目前狀態，並由固定 mapping 決定 ScoreAwarded；Client 不可提交任意 Score、整場比分或勝方。
 
 ## 發射失誤
 
-一次 LaunchFault 不立即得分。
+fault count 以同一個未完成 Round、同一實際 Player／Beyblade 的有效事件重建：
 
-第二次同一顆陀螺的有效 LaunchFault：
+```text
+0 --LaunchFault--> 1
+1 --LaunchFault--> LaunchFaultPenalty(對手 +1) --> 0
+```
 
-- 對手 +1。
-- 建立 LaunchFaultPenalty event。
-- fault counter reset。
+- LaunchFault 的 ScoreAwarded = 0。
+- 第二次有效 LaunchFault 同時建立 ScoreAwarded = 1 的 LaunchFaultPenalty。
+- LaunchFault 與 LaunchFaultPenalty 都不完成 Round，同一顆陀螺繼續。
+- Penalty 分數同時進入 Battle 比分、得分方／陀螺得分及失誤方／陀螺失分。
+
+## Round 與 Battle 分數
+
+- 一個正常完成的 Round 必須有且只有一個有效 BattleResult。
+- Round 可同時包含多個 LaunchFault、LaunchFaultPenalty 與一個 BattleResult。
+- Battle 比分是所有有效 RoundEvent 依實際 Side A/B 方向重算的總和，正式欄位為 `SideAScore`／`SideBScore`。
+- 快速對戰 `ScoreToWin = 4`。
+- Tournament 依 RuleSet 使用 4、5、6 或 8 分，不得在程式或文件中假設固定 4 分。
+
+每次新增有效得分或執行 Revision 後：
+
+```text
+if SideAScore >= ScoreToWin || SideBScore >= ScoreToWin
+    Battle -> VictoryPendingCompletion
+else
+    Battle -> InProgress 或 ReorderSelection（依當前流程）
+```
+
+首次達門檻後不得再新增正常得分事件，但不自動 Completed。授權裁判檢查後執行 Finish；Server 再驗證門檻、唯一勝方及 Match 狀態。
 
 ## 範例
 
-A 龍騎士 vs B 霸王：
+A 的龍騎士對 B 的霸王：
 
-1. A LaunchFault
-2. A LaunchFault
-3. B +1
-4. fault reset
-5. A SpinFinish
-6. A +1
+1. A LaunchFault。
+2. A 再次 LaunchFault，建立 B +1 的 LaunchFaultPenalty，A fault 歸零。
+3. A 以 SpinFinish 得 1。
+4. 裁判完成 Round。
 
-Round 對 A/B：
+此 Round：
 
-- A 得 1
-- B 得 1
+- A 得分 1、失分 1。
+- B 得分 1、失分 1。
+- A 的發射失誤失分增加 1。
+- LaunchFaultPenalty 不會取代 SpinFinish，也不會單獨形成 Round 勝敗。
 
-陀螺統計：
+## Revision 重播
 
-A 龍騎士：
-- 得分 1
-- 失分 1
-
-B 霸王：
-- 得分 1
-- 失分 1
-
-玩家額外統計：
-
-A：
-- 因發射失誤失分 1
-
-B：
-- 因發射失誤得分 1
-
+- 修改指定 Round 時，以新 BattleResult 取代舊有效結果並留下 Revision。
+- 從最早受影響事件依序重算所有 Round、比分與狀態。
+- 首次達 ScoreToWin 後的事件標記為 `VictoryThresholdReached` 並失效。
+- 若後續 Revision 使門檻消失，先前只因門檻而失效的事件可按時間順序重新參與重播。
+- 棄權、取消或撤銷造成的失效使用不同 InvalidationReason，不得被一般 Revision 恢復。

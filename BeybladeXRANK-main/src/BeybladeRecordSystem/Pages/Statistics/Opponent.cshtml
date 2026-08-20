@@ -2,7 +2,22 @@
 @model BeybladeRecordSystem.Pages.Statistics.OpponentModel
 @{ ViewData["Title"] = "對手陀螺戰績"; }
 <h1>vs @Model.OpponentDisplayName</h1>
-<p class="text-muted">以我的陀螺分組，查看各顆陀螺對上此對手陀螺的紀錄。</p>
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-2 mb-3">
+    <p class="text-muted mb-0">以我的陀螺分組，查看各顆陀螺對上此對手陀螺的已完成小局。</p>
+    <form method="get" class="d-flex align-items-end gap-2">
+        <input type="hidden" name="id" value="@RouteData.Values["id"]" />
+        <div>
+            <label for="source" class="form-label small mb-1">資料來源</label>
+            <select id="source" name="source" class="form-select" onchange="this.form.submit()">
+                <option value="all" selected="@(Model.Source == "all")">全部來源</option>
+                <option value="quick" selected="@(Model.Source == "quick")">快速對戰</option>
+                <option value="individual" selected="@(Model.Source == "individual")">錦標賽個人賽</option>
+                <option value="team" selected="@(Model.Source == "team")">錦標賽團體賽</option>
+            </select>
+        </div>
+    </form>
+</div>
+<div class="alert alert-light border py-2">目前範圍：<strong>@Model.SourceLabel</strong></div>
 @if (!Model.Rows.Any())
 {
     <div class="alert alert-secondary">尚無已完成的對戰紀錄。</div>
@@ -27,4 +42,4 @@ else
         </section>
     }
 }
-<a asp-page="Index" class="btn btn-link">回我的戰績</a>
+<a asp-page="Index" asp-route-source="@Model.Source" class="btn btn-link">回我的戰績</a>

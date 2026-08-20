@@ -1,0 +1,92 @@
+@page "{id:int}"
+@using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Infrastructure
+@model BeybladeRecordSystem.Pages.Battles.SetupModel
+@{
+    ViewData["Title"] = "快速對戰準備";
+    var battle = Model.Workspace.Battle;
+    var currentUserId = User.GetRequiredUserId();
+    var isCreator = battle.CreatedByUserId == currentUserId;
+    var requesterName = battle.PendingLineupEditRequestedByUserId == battle.PlayerAId ? battle.PlayerA.DisplayName : battle.PlayerB.DisplayName;
+    var shouldPoll = (battle.Status == BattleStatus.LineupSelection && Model.Workspace.CurrentUserSubmitted) ||
+        (battle.Status == BattleStatus.LineupReview && (Model.Workspace.CurrentUserConfirmed || battle.PendingLineupEditRequestedByUserId == currentUserId)) ||
+        (battle.Status == BattleStatus.LineupLocked && !isCreator);
+}
+<div class="d-flex justify-content-between align-items-center mb-3"><h1>快速對戰準備</h1><a asp-page="Setup" asp-route-id="@battle.Id" class="btn btn-outline-secondary">重新整理</a></div>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+<div class="card card-body mb-3"><div class="d-flex justify-content-between"><strong>@battle.PlayerA.DisplayName</strong><span>vs</span><strong>@battle.PlayerB.DisplayName</strong></div><small class="text-muted mt-2">Battle #@battle.Id · 陣容版本 @battle.LineupSequenceNo</small></div>
+
+@if (battle.Status == BattleStatus.LineupSelection)
+{
+    if (Model.Workspace.CurrentUserSubmitted)
+    {
+        <div class="alert alert-info">你的陣容已密封。等待對手提交；對手目前看不到你的陀螺與順位。</div>
+        <ol>@foreach (var item in Model.Workspace.CurrentPrivateSelections.OrderBy(x => x.PositionNo)) { <li>@item.BeybladeNameSnapshot</li> }</ol>
+    }
+    else
+    {
+        <form method="post" asp-page-handler="SubmitLineup" class="card card-body">
+            <h2 class="h5">密封提交你的三顆陀螺</h2>
+            <p class="text-muted">順位會在雙方都提交後同時公開。你不能替對手選擇。</p>
+            @for (var index = 0; index < 3; index++)
+            {
+                <label class="form-label">@(index + 1) 號順位</label>
+                <select name="BladeIds" class="form-select mb-3"><option value="0">請選擇</option>@foreach (var blade in Model.Workspace.AvailableBeyblades) { <option value="@blade.Id">@blade.Name</option> }</select>
+            }
+            <div><button class="btn btn-primary">密封提交</button> <a asp-page="/Beyblades/Create" asp-route-returnUrl="/Battles/Setup/@battle.Id" class="btn btn-outline-primary">先新增陀螺</a></div>
+        </form>
+    }
+}
+else if (battle.Status == BattleStatus.LineupReview)
+{
+    <div class="row g-3 mb-3">
+        @foreach (var player in new[] { battle.PlayerA, battle.PlayerB })
+        {
+            <div class="col-md-6"><div class="card card-body h-100"><h2 class="h5">@player.DisplayName</h2><ol>@foreach (var item in Model.Workspace.VisibleSelections.Where(x => x.UserId == player.Id).OrderBy(x => x.PositionNo)) { <li>@item.BeybladeNameSnapshot</li> }</ol></div></div>
+        }
+    </div>
+    if (battle.PendingLineupEditRequestedByUserId is not null)
+    {
+        if (battle.PendingLineupEditRequestedByUserId == currentUserId)
+        {
+            <div class="alert alert-info">已要求重新編輯，等待對手回覆。</div>
+        }
+        else
+        {
+            <div class="card card-body"><p><strong>@requesterName</strong> 要求雙方重新選擇本版陣容。</p><div><form method="post" asp-page-handler="RespondEdit" class="d-inline"><input type="hidden" name="accept" value="true" /><button class="btn btn-success">接受並重選</button></form> <form method="post" asp-page-handler="RespondEdit" class="d-inline"><input type="hidden" name="accept" value="false" /><button class="btn btn-outline-danger">拒絕並保留</button></form></div></div>
+        }
+    }
+    else if (Model.Workspace.CurrentUserConfirmed)
+    {
+        <div class="alert alert-success">你已確認本版陣容，等待對手確認。</div>
+    }
+    else
+    {
+        <div class="d-flex gap-2"><form method="post" asp-page-handler="Confirm"><button class="btn btn-primary">確認陣容</button></form>@if (!Model.Workspace.CurrentUserEditRequestUsed) { <form method="post" asp-page-handler="RequestEdit"><button class="btn btn-outline-warning">要求重新編輯</button></form> }</div>
+    }
+}
+else if (battle.Status == BattleStatus.LineupLocked)
+{
+    <div class="alert alert-success">雙方已確認，陣容已鎖定。</div>
+    @if (isCreator)
+    {
+        <form method="post" asp-page-handler="AssignSide" class="card card-body col-lg-7"><label asp-for="SideA" class="form-label">指定 @battle.PlayerA.DisplayName 的 Side</label><select asp-for="SideA" class="form-select mb-3"><option value="B">B Side（藍）</option><option value="X">X Side（紅）</option></select><button class="btn btn-primary">確認 B/X Side</button></form>
+    }
+    else { <div class="alert alert-info">等待建立者裁判指定 B/X Side。</div> }
+}
+else if (battle.Status == BattleStatus.SideSelection)
+{
+    var playerASide = battle.SideADesignation!.Value;
+    var playerBSide = playerASide == BattleSide.B ? BattleSide.X : BattleSide.B;
+    <div class="card card-body mb-3"><p>@battle.PlayerA.DisplayName：<strong>@playerASide Side</strong></p><p class="mb-0">@battle.PlayerB.DisplayName：<strong>@playerBSide Side</strong></p></div>
+    @if (isCreator) { <form method="post" asp-page-handler="Start"><button class="btn btn-primary btn-lg">開始第一個 Round</button></form> } else { <div class="alert alert-info">Side 已指定，等待建立者裁判開始對戰。</div> }
+}
+else
+{
+    <a asp-page="Battle" asp-route-id="@battle.Id" class="btn btn-primary">前往對戰</a>
+}
+
+@section Scripts {
+    @if (shouldPoll) { <script>window.setTimeout(() => window.location.reload(), 10000);</script> }
+}

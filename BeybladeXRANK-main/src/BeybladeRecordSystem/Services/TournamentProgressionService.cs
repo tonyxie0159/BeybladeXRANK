@@ -19,6 +19,7 @@ public class TournamentProgressionService(AppDbContext db)
         var tournament = await db.Tournaments.AsSplitQuery()
             .Include(x => x.Entries).ThenInclude(x => x.Members)
             .Include(x => x.Matches).ThenInclude(x => x.Participants)
+            .Include(x => x.Matches).ThenInclude(x => x.Battle)
             .SingleAsync(x => x.Id == completedMatch.TournamentId);
         var match = tournament.Matches.Single(x => x.Id == completedMatch.Id);
         match.WinnerEntryId = winnerEntryId;
@@ -60,8 +61,15 @@ public class TournamentProgressionService(AppDbContext db)
             .Where(x => !x.IsBye && x.Status == TournamentMatchStatus.WaitingForParticipants && x.SideAEntryId is not null && x.SideBEntryId is not null)
             .OrderBy(x => x.SequenceNumber)
             .FirstOrDefault();
-        if (next is null && tournament.Format == TournamentFormat.Swiss)
+        if (next is null && tournament.Format == TournamentFormat.Swiss &&
+            !tournament.Matches.Any(x => x.Bracket == TournamentBracket.Playoff))
             next = CreateNextSwissRound(tournament, now);
+        if (next is null && tournament.Matches.All(x => IsTerminal(x.Status)))
+        {
+            var playoffEntryIds = TournamentStandingsService.GetRequiredChampionPlayoffEntryIds(tournament);
+            if (playoffEntryIds.Count > 1)
+                next = await CreateRequiredChampionPlayoffAsync(tournament, playoffEntryIds, now);
+        }
         if (next is not null)
         {
             next.Status = TournamentMatchStatus.AwaitingParticipationConfirmation;
@@ -77,13 +85,82 @@ public class TournamentProgressionService(AppDbContext db)
                         next.Participants.Add(CreateParticipant(next, entry, member.UserId, member.IsRepresentative, now));
             }
         }
-        else if (tournament.Matches.All(x => x.Status is TournamentMatchStatus.Completed or TournamentMatchStatus.Walkover or TournamentMatchStatus.Forfeited or TournamentMatchStatus.NotRequired))
+        else if (tournament.Matches.All(x => IsTerminal(x.Status)))
         {
             tournament.Status = TournamentStatus.Completed;
             tournament.CompletedAtUtc = now;
         }
         tournament.UpdatedAtUtc = now;
         tournament.Version = Guid.NewGuid().ToByteArray();
+    }
+
+    private async Task<TournamentMatch> CreateRequiredChampionPlayoffAsync(
+        Tournament tournament,
+        IReadOnlyList<int> tiedEntryIds,
+        DateTime now)
+    {
+        var definitions = TournamentScheduleGenerator.GenerateChampionPlayoff(
+            tiedEntryIds,
+            unchecked((tournament.Id * 397) ^ tournament.Matches.Count));
+        var sequenceOffset = tournament.Matches.Max(x => x.SequenceNumber);
+        var persistedByDefinitionId = new Dictionary<int, TournamentMatch>();
+        foreach (var definition in definitions)
+        {
+            var match = new TournamentMatch
+            {
+                Tournament = tournament,
+                Bracket = TournamentBracket.Playoff,
+                RoundNumber = definition.RoundNumber,
+                MatchNumber = definition.MatchNumber,
+                SequenceNumber = sequenceOffset + definition.SequenceNumber,
+                Status = TournamentMatchStatus.WaitingForParticipants,
+                SideASourceKind = definition.SideA.Kind,
+                SideASourceReferenceId = definition.SideA.ReferenceId,
+                SideBSourceKind = definition.SideB.Kind,
+                SideBSourceReferenceId = definition.SideB.ReferenceId,
+                SideAEntryId = definition.SideA.Kind == TournamentParticipantSourceKind.Entry
+                    ? definition.SideA.ReferenceId
+                    : null,
+                SideBEntryId = definition.SideB.Kind == TournamentParticipantSourceKind.Entry
+                    ? definition.SideB.ReferenceId
+                    : null,
+                ResolutionReason = "ChampionPlayoff",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                Version = Guid.NewGuid().ToByteArray()
+            };
+            persistedByDefinitionId.Add(definition.Id, match);
+            tournament.Matches.Add(match);
+        }
+        await db.SaveChangesAsync();
+
+        foreach (var definition in definitions)
+        {
+            var target = persistedByDefinitionId[definition.Id];
+            ApplyPlayoffSource(definition.SideA, target, true, persistedByDefinitionId);
+            ApplyPlayoffSource(definition.SideB, target, false, persistedByDefinitionId);
+        }
+        await db.SaveChangesAsync();
+
+        return persistedByDefinitionId.Values
+            .Where(x => x.SideAEntryId is not null && x.SideBEntryId is not null)
+            .OrderBy(x => x.SequenceNumber)
+            .First();
+    }
+
+    private static void ApplyPlayoffSource(
+        TournamentParticipantSource source,
+        TournamentMatch target,
+        bool isSideA,
+        IReadOnlyDictionary<int, TournamentMatch> persistedByDefinitionId)
+    {
+        if (source.Kind == TournamentParticipantSourceKind.Entry) return;
+        var sourceMatch = persistedByDefinitionId[source.ReferenceId];
+        sourceMatch.WinnerToMatchId = target.Id;
+        if (isSideA)
+            target.SideASourceReferenceId = sourceMatch.Id;
+        else
+            target.SideBSourceReferenceId = sourceMatch.Id;
     }
 
     private static int? ResolveSource(TournamentParticipantSourceKind? kind, int? current, int winnerEntryId, int loserEntryId) => kind switch

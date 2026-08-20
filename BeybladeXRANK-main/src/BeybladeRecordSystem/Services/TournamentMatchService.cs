@@ -1,7 +1,10 @@
 using BeybladeRecordSystem.Data;
+using BeybladeRecordSystem.Domain;
 using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
+using BeybladeRecordSystem.Domain.Tournaments;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace BeybladeRecordSystem.Services;
 
@@ -13,9 +16,36 @@ public record TournamentMatchWorkspace(
     IReadOnlyList<BattleLineupSelection> CurrentPrivateSelections,
     IReadOnlyList<BattleTeamOrderSelection> CurrentPrivateTeamOrder,
     IReadOnlyList<Beyblade> AvailableBeyblades,
-    bool IsOrganizer);
+    bool IsOrganizer)
+{
+    public string PollToken => string.Join(':',
+        Match.Status,
+        Convert.ToBase64String(Match.Version),
+        Match.Battle is null ? string.Empty : Convert.ToBase64String(Match.Battle.Version));
+}
 
-public record TournamentMatchAction(int MatchId, int SequenceNumber, TournamentMatchStatus Status, bool IsOrganizer);
+public enum TournamentMatchActionKind
+{
+    RespondParticipation,
+    SubmitLineup,
+    SubmitTeamOrder,
+    ConfirmLineup,
+    SubmitReorder,
+    SubmitTeamReorder,
+    ReviewParticipation,
+    AssignSides,
+    RecordBattle,
+    CompleteBattle
+}
+
+public record TournamentMatchAction(
+    int TournamentId,
+    int MatchId,
+    int SequenceNumber,
+    TournamentMatchStatus Status,
+    TournamentMatchActionKind Kind,
+    string Label,
+    bool IsOrganizer);
 
 public class TournamentMatchService(AppDbContext db)
 {
@@ -51,14 +81,101 @@ public class TournamentMatchService(AppDbContext db)
 
     public async Task<IReadOnlyList<TournamentMatchAction>> GetActionableAsync(int tournamentId, int userId)
     {
-        return await db.TournamentMatches
-            .Where(x => x.TournamentId == tournamentId &&
+        return await GetActionableForUserAsync(userId, tournamentId);
+    }
+
+    public async Task<IReadOnlyList<TournamentMatchAction>> GetActionableForUserAsync(
+        int userId,
+        int? tournamentId = null)
+    {
+        var query = db.TournamentMatches.AsNoTracking().AsSplitQuery()
+            .Include(x => x.Tournament)
+            .Include(x => x.Participants)
+            .Include(x => x.Battle).ThenInclude(x => x!.LineupSelections)
+            .Include(x => x.Battle).ThenInclude(x => x!.TeamOrderSelections)
+            .Include(x => x.Battle).ThenInclude(x => x!.Lineups)
+            .Where(x =>
+                (tournamentId == null || x.TournamentId == tournamentId) &&
                 (x.Tournament.OrganizerUserId == userId || x.Participants.Any(p => p.UserId == userId)) &&
                 x.Status >= TournamentMatchStatus.AwaitingParticipationConfirmation &&
-                x.Status < TournamentMatchStatus.Completed)
-            .OrderBy(x => x.SequenceNumber)
-            .Select(x => new TournamentMatchAction(x.Id, x.SequenceNumber, x.Status, x.Tournament.OrganizerUserId == userId))
-            .ToListAsync();
+                x.Status < TournamentMatchStatus.Completed);
+
+        var matches = await query.OrderBy(x => x.SequenceNumber).ToListAsync();
+        return matches
+            .Select(x => CreateAction(x, userId))
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToList();
+    }
+
+    private static TournamentMatchAction? CreateAction(TournamentMatch match, int userId)
+    {
+        var participant = match.Participants.SingleOrDefault(x => x.UserId == userId);
+        if (participant is not null)
+        {
+            if (match.Status == TournamentMatchStatus.AwaitingParticipationConfirmation &&
+                participant.Status == TournamentParticipationStatus.Pending)
+                return Action(TournamentMatchActionKind.RespondParticipation, "回覆出賽通知");
+
+            if (match.Status == TournamentMatchStatus.LineupSelection &&
+                participant.Status == TournamentParticipationStatus.Accepted &&
+                match.Battle is not null &&
+                !match.Battle.LineupSelections.Any(x => x.SequenceNo == 1 && x.UserId == userId))
+                return Action(TournamentMatchActionKind.SubmitLineup, "提交私密陣容");
+
+            if (match.Status == TournamentMatchStatus.TeamOrderSelection &&
+                participant.Status == TournamentParticipationStatus.Accepted &&
+                participant.IsMatchRepresentative &&
+                match.Battle is not null &&
+                !match.Battle.TeamOrderSelections.Any(x =>
+                    x.SequenceNo == 1 && x.TournamentEntryId == participant.TournamentEntryId))
+                return Action(TournamentMatchActionKind.SubmitTeamOrder, "提交隊員出戰順序");
+
+            if (match.Status == TournamentMatchStatus.LineupReview &&
+                participant.Status == TournamentParticipationStatus.Accepted &&
+                !participant.LineupConfirmed)
+                return Action(TournamentMatchActionKind.ConfirmLineup, "確認公開陣容");
+
+            if (match.Status == TournamentMatchStatus.ReorderSelection &&
+                participant.Status == TournamentParticipationStatus.Accepted &&
+                match.Battle is not null)
+            {
+                var currentSequence = match.Battle.Lineups.Where(x => x.IsCurrent)
+                    .Select(x => x.SequenceNo).DefaultIfEmpty(0).Max();
+                var nextSequence = currentSequence + 1;
+                if (!match.Battle.LineupSelections.Any(x =>
+                        x.SequenceNo == nextSequence && x.UserId == userId))
+                    return Action(TournamentMatchActionKind.SubmitReorder, "提交陀螺重排");
+                if (match.Tournament.Mode == TournamentMode.Team && participant.IsMatchRepresentative &&
+                    !match.Battle.TeamOrderSelections.Any(x =>
+                        x.SequenceNo == nextSequence && x.TournamentEntryId == participant.TournamentEntryId))
+                    return Action(TournamentMatchActionKind.SubmitTeamReorder, "提交隊員重排");
+            }
+        }
+
+        if (match.Tournament.OrganizerUserId != userId) return null;
+        return match.Status switch
+        {
+            TournamentMatchStatus.AwaitingParticipationConfirmation when
+                match.Participants.Any(x => x.Status == TournamentParticipationStatus.Pending) =>
+                Action(TournamentMatchActionKind.ReviewParticipation, "檢視出賽回覆／判定未到"),
+            TournamentMatchStatus.LineupLocked or TournamentMatchStatus.SideSelection =>
+                Action(TournamentMatchActionKind.AssignSides, "指定 B／X Side 並開賽"),
+            TournamentMatchStatus.InProgress =>
+                Action(TournamentMatchActionKind.RecordBattle, "裁判記錄比分"),
+            TournamentMatchStatus.VictoryPendingCompletion =>
+                Action(TournamentMatchActionKind.CompleteBattle, "確認對戰結束"),
+            _ => null
+        };
+
+        TournamentMatchAction Action(TournamentMatchActionKind kind, string label) => new(
+            match.TournamentId,
+            match.Id,
+            match.SequenceNumber,
+            match.Status,
+            kind,
+            label,
+            match.Tournament.OrganizerUserId == userId);
     }
 
     public async Task<ServiceResult> RespondParticipationAsync(int matchId, int userId, bool accept)
@@ -353,6 +470,245 @@ public class TournamentMatchService(AppDbContext db)
         return ServiceResult<int>.Success(match.Battle.Id);
     }
 
+    public async Task<ServiceResult> DeclareNoShowAsync(
+        int matchId,
+        int organizerUserId,
+        int absentEntryId,
+        string? reason,
+        bool confirmed)
+    {
+        var noShowReason = reason?.Trim();
+        if (!confirmed)
+            return ServiceResult.Failure("請先確認未到判定會讓對手直接獲勝，且本場不建立比分 Battle。");
+        if (noShowReason?.Length > 490)
+            return ServiceResult.Failure("未到原因不可超過 490 個字元。");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var match = await db.TournamentMatches.AsSplitQuery()
+            .Include(x => x.Tournament)
+            .Include(x => x.Participants)
+            .Include(x => x.Battle)
+            .SingleOrDefaultAsync(x => x.Id == matchId);
+        if (match is null) return ServiceResult.Failure("找不到對局。");
+        if (match.Tournament.OrganizerUserId != organizerUserId)
+            return ServiceResult.Failure("只有主辦方裁判可以判定未到。");
+        if (match.Status != TournamentMatchStatus.AwaitingParticipationConfirmation)
+            return ServiceResult.Failure("只有等待出賽確認的對局可以判定未到。");
+        if (absentEntryId != match.SideAEntryId && absentEntryId != match.SideBEntryId)
+            return ServiceResult.Failure("指定的未到 Entry 不屬於這場對局。");
+        if (match.Battle is not null)
+            return ServiceResult.Failure("這場對局已建立 Battle，不能改用未到判定。");
+
+        var absentParticipants = match.Participants
+            .Where(x => x.TournamentEntryId == absentEntryId)
+            .ToList();
+        if (absentParticipants.Count == 0 ||
+            absentParticipants.All(x => x.Status != TournamentParticipationStatus.Pending))
+            return ServiceResult.Failure("只能對仍有必要選手未回覆的 Entry 判定未到。");
+
+        var winnerEntryId = match.SideAEntryId == absentEntryId
+            ? match.SideBEntryId
+            : match.SideAEntryId;
+        if (winnerEntryId is null)
+            return ServiceResult.Failure("對局缺少已解析的對手 Entry。");
+
+        var now = DateTime.UtcNow;
+        foreach (var participant in absentParticipants.Where(x =>
+                     x.Status == TournamentParticipationStatus.Pending))
+        {
+            participant.Status = TournamentParticipationStatus.NoShow;
+            participant.RespondedAtUtc = now;
+            participant.Version = Guid.NewGuid().ToByteArray();
+        }
+        foreach (var pending in match.Participants.Where(x =>
+                     x.TournamentEntryId != absentEntryId &&
+                     x.Status == TournamentParticipationStatus.Pending))
+        {
+            pending.Status = TournamentParticipationStatus.Invalidated;
+            pending.Version = Guid.NewGuid().ToByteArray();
+        }
+
+        var resolutionReason = string.IsNullOrWhiteSpace(noShowReason)
+            ? "NoShow"
+            : $"NoShow: {noShowReason}";
+        await new TournamentProgressionService(db).CompleteMatchAndAdvanceAsync(
+            match,
+            winnerEntryId.Value,
+            absentEntryId,
+            TournamentMatchStatus.Walkover,
+            resolutionReason,
+            now);
+        try
+        {
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ServiceResult.Success();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ServiceResult.Failure("對局狀態已被更新，請重新整理後再操作。");
+        }
+    }
+
+    public async Task<ServiceResult> ForfeitAsync(int matchId, int userId, string? reason)
+    {
+        var forfeitReason = reason?.Trim();
+        if (forfeitReason?.Length > 500)
+            return ServiceResult.Failure("棄權原因不可超過 500 個字元。");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var match = await MatchQuery().SingleOrDefaultAsync(x => x.Id == matchId);
+        if (match is null) return ServiceResult.Failure("找不到對局。");
+        var participant = match.Participants.SingleOrDefault(x => x.UserId == userId && x.Status == TournamentParticipationStatus.Accepted);
+        if (participant is null) return ServiceResult.Failure("只有這場對局已確認出賽的參賽者可以棄權。");
+        if (match.Status is not (TournamentMatchStatus.InProgress or TournamentMatchStatus.ReorderSelection) ||
+            match.Battle?.Status != BattleStatus.InProgress)
+            return ServiceResult.Failure("只有進行中或等待下一組重排的對局可以棄權。");
+
+        var loserEntryId = participant.TournamentEntryId;
+        if (match.SideAEntryId != loserEntryId && match.SideBEntryId != loserEntryId)
+            return ServiceResult.Failure("參賽者與對局 Entry 資料不一致。");
+        var winnerEntryId = match.SideAEntryId == loserEntryId ? match.SideBEntryId : match.SideAEntryId;
+        if (winnerEntryId is null || match.SideAEntryId is null || match.SideBEntryId is null)
+            return ServiceResult.Failure("對局缺少已解析的參賽單位。");
+
+        var now = DateTime.UtcNow;
+        var battle = match.Battle;
+        foreach (var round in battle.Rounds.Where(x => x.Status == BattleRoundStatus.InProgress))
+            foreach (var roundEvent in round.Events)
+            {
+                roundEvent.IsEffective = false;
+                roundEvent.InvalidationReason = BattleRoundEventInvalidationReason.BattleTerminated;
+            }
+
+        (battle.SideAScore, battle.SideBScore) = BattleRules.CalculateScores(battle.Rounds);
+        var sideAWon = winnerEntryId == match.SideAEntryId;
+        battle.Status = BattleStatus.Forfeited;
+        battle.WinningSide = sideAWon
+            ? battle.SideADesignation
+            : battle.SideADesignation is null ? null : BattleRules.Opposite(battle.SideADesignation.Value);
+        battle.WinningPlayerId = match.Tournament.Mode == TournamentMode.Individual
+            ? sideAWon ? battle.PlayerAId : battle.PlayerBId
+            : null;
+        battle.CompletedAtUtc = now;
+        battle.Version = Guid.NewGuid().ToByteArray();
+
+        foreach (var pending in match.Participants.Where(x => x.Status == TournamentParticipationStatus.Pending))
+        {
+            pending.Status = TournamentParticipationStatus.Invalidated;
+            pending.Version = Guid.NewGuid().ToByteArray();
+        }
+
+        await new TournamentProgressionService(db).CompleteMatchAndAdvanceAsync(
+            match,
+            winnerEntryId.Value,
+            loserEntryId,
+            TournamentMatchStatus.Forfeited,
+            string.IsNullOrWhiteSpace(forfeitReason) ? "ParticipantForfeit" : forfeitReason,
+            now);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return ServiceResult.Success();
+    }
+
+    public async Task<ServiceResult> VoidAndReopenAsync(
+        int matchId,
+        int organizerUserId,
+        string? reason,
+        bool confirmDownstreamReset)
+    {
+        var voidReason = reason?.Trim() ?? string.Empty;
+        if (voidReason.Length is < 1 or > 500)
+            return ServiceResult.Failure("撤銷原因須為 1 至 500 個字元。");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var tournament = await db.Tournaments.AsSplitQuery()
+            .Include(x => x.Matches).ThenInclude(x => x.Participants)
+            .Include(x => x.Matches).ThenInclude(x => x.Battle).ThenInclude(x => x!.Rounds).ThenInclude(x => x.Events)
+            .SingleOrDefaultAsync(x => x.Matches.Any(m => m.Id == matchId));
+        if (tournament is null) return ServiceResult.Failure("找不到對局。");
+        if (tournament.OrganizerUserId != organizerUserId)
+            return ServiceResult.Failure("只有主辦方裁判可以撤銷並重開對局。");
+        if (tournament.Status == TournamentStatus.Cancelled)
+            return ServiceResult.Failure("已取消的比賽不能重開對局。");
+
+        var match = tournament.Matches.Single(x => x.Id == matchId);
+        if (match.Bracket != TournamentBracket.Playoff &&
+            tournament.Matches.Any(x => x.Bracket == TournamentBracket.Playoff))
+            return ServiceResult.Failure("冠軍加賽已建立，不能直接重開例行對局，以免加賽名單與排名失去一致性。");
+        var battle = match.Battle;
+        if (match.IsBye || battle is null || battle.SourceType == BattleSourceType.Quick)
+            return ServiceResult.Failure("此對局沒有可撤銷的 Tournament Battle。");
+        if (battle.Status is BattleStatus.Cancelled or BattleStatus.Voided)
+            return ServiceResult.Failure("此 Battle 已取消或撤銷。");
+        if (match.SideAEntryId is null || match.SideBEntryId is null)
+            return ServiceResult.Failure("對局缺少已解析的參賽單位。");
+
+        if (tournament.Format == TournamentFormat.Swiss &&
+            tournament.Matches.Any(x => x.Bracket == match.Bracket && x.RoundNumber > match.RoundNumber))
+            return ServiceResult.Failure("瑞士輪後續配對已建立；請先由最末輪逆序撤銷，才能重開此對局。");
+
+        var downstream = tournament.Matches.Where(x => x.Id != match.Id &&
+            ((x.SideASourceKind is TournamentParticipantSourceKind.MatchWinner or TournamentParticipantSourceKind.MatchLoser &&
+                x.SideASourceReferenceId == match.Id) ||
+             (x.SideBSourceKind is TournamentParticipantSourceKind.MatchWinner or TournamentParticipantSourceKind.MatchLoser &&
+                x.SideBSourceReferenceId == match.Id)))
+            .ToList();
+        var blocked = downstream.FirstOrDefault(x => IsStartedOrResolvedDownstream(x.Status));
+        if (blocked is not null)
+            return ServiceResult.Failure($"下游對局 #{blocked.SequenceNumber} 已開始或已有正式結果；必須先由下游逆序撤銷。");
+        if (!confirmDownstreamReset && downstream.Any(HasPreparedLineup))
+            return ServiceResult.Failure("下游已有 Lineup；請勾選確認撤銷下游通知與陣容後再繼續。");
+
+        var now = DateTime.UtcNow;
+        foreach (var dependent in downstream)
+        {
+            if (dependent.Battle is { } dependentBattle)
+                VoidBattle(dependentBattle, dependent, organizerUserId,
+                    $"上游 Battle #{battle.Id} 已撤銷", now);
+            db.TournamentMatchParticipants.RemoveRange(dependent.Participants);
+            if (dependent.SideASourceKind is TournamentParticipantSourceKind.MatchWinner or TournamentParticipantSourceKind.MatchLoser &&
+                dependent.SideASourceReferenceId == match.Id)
+                dependent.SideAEntryId = null;
+            if (dependent.SideBSourceKind is TournamentParticipantSourceKind.MatchWinner or TournamentParticipantSourceKind.MatchLoser &&
+                dependent.SideBSourceReferenceId == match.Id)
+                dependent.SideBEntryId = null;
+            dependent.WinnerEntryId = null;
+            dependent.LoserEntryId = null;
+            dependent.Status = TournamentMatchStatus.WaitingForParticipants;
+            dependent.ResolutionReason = $"UpstreamBattleVoided:{battle.Id}";
+            dependent.CompletedAtUtc = null;
+            dependent.UpdatedAtUtc = now;
+            dependent.Version = Guid.NewGuid().ToByteArray();
+        }
+
+        VoidBattle(battle, match, organizerUserId, voidReason, now);
+        foreach (var participant in match.Participants)
+        {
+            participant.Status = TournamentParticipationStatus.Pending;
+            participant.LineupConfirmed = false;
+            participant.RespondedAtUtc = null;
+            participant.LineupConfirmedAtUtc = null;
+            participant.NotifiedAtUtc = now;
+            participant.Version = Guid.NewGuid().ToByteArray();
+        }
+        match.WinnerEntryId = null;
+        match.LoserEntryId = null;
+        match.Status = TournamentMatchStatus.AwaitingParticipationConfirmation;
+        match.ResolutionReason = $"ReopenedAfterVoid:{battle.Id}";
+        match.CompletedAtUtc = null;
+        match.UpdatedAtUtc = now;
+        match.Version = Guid.NewGuid().ToByteArray();
+        tournament.Status = TournamentStatus.InProgress;
+        tournament.CompletedAtUtc = null;
+        tournament.UpdatedAtUtc = now;
+        tournament.Version = Guid.NewGuid().ToByteArray();
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return ServiceResult.Success();
+    }
+
     private IQueryable<TournamentMatch> MatchQuery() => db.TournamentMatches
         .AsSplitQuery()
         .Include(x => x.Tournament)
@@ -360,11 +716,69 @@ public class TournamentMatchService(AppDbContext db)
         .Include(x => x.SideAEntry).ThenInclude(x => x!.Members)
         .Include(x => x.SideBEntry).ThenInclude(x => x!.IndividualUser)
         .Include(x => x.SideBEntry).ThenInclude(x => x!.Members)
+        .Include(x => x.WinnerEntry)
+        .Include(x => x.LoserEntry)
         .Include(x => x.Participants).ThenInclude(x => x.User)
         .Include(x => x.Battle).ThenInclude(x => x!.LineupSelections)
         .Include(x => x.Battle).ThenInclude(x => x!.TeamOrderSelections)
         .Include(x => x.Battle).ThenInclude(x => x!.Lineups)
-        .Include(x => x.Battle).ThenInclude(x => x!.Rounds);
+        .Include(x => x.Battle).ThenInclude(x => x!.Rounds).ThenInclude(x => x.Events)
+        .Include(x => x.VoidedBattles).ThenInclude(x => x.VoidedByUser);
+
+    internal static bool IsStartedOrResolvedDownstream(TournamentMatchStatus status) => status is
+        TournamentMatchStatus.InProgress or TournamentMatchStatus.ReorderSelection or
+        TournamentMatchStatus.VictoryPendingCompletion or TournamentMatchStatus.Completed or
+        TournamentMatchStatus.Forfeited or TournamentMatchStatus.Walkover;
+
+    internal static bool HasPreparedLineup(TournamentMatch match) => match.Battle is not null || match.Status is
+        TournamentMatchStatus.LineupSelection or TournamentMatchStatus.TeamOrderSelection or
+        TournamentMatchStatus.LineupReview or TournamentMatchStatus.LineupLocked or TournamentMatchStatus.SideSelection;
+
+    internal static void VoidBattle(
+        Battle battle,
+        TournamentMatch ownerMatch,
+        int organizerUserId,
+        string reason,
+        DateTime now)
+    {
+        battle.VoidSnapshot = JsonSerializer.Serialize(new
+        {
+            BattleStatus = battle.Status,
+            battle.SideAScore,
+            battle.SideBScore,
+            battle.WinningSide,
+            battle.WinningPlayerId,
+            MatchStatus = ownerMatch.Status,
+            ownerMatch.WinnerEntryId,
+            ownerMatch.LoserEntryId,
+            Events = battle.Rounds.OrderBy(x => x.RoundNo).SelectMany(round => round.Events.OrderBy(x => x.EventSequence).Select(roundEvent => new
+            {
+                round.RoundNo,
+                roundEvent.EventSequence,
+                roundEvent.EventType,
+                roundEvent.ActorPlayerId,
+                roundEvent.WinnerPlayerId,
+                roundEvent.ResultType,
+                roundEvent.ScoreAwarded,
+                roundEvent.IsEffective
+            }))
+        });
+        foreach (var roundEvent in battle.Rounds.SelectMany(x => x.Events))
+        {
+            roundEvent.IsEffective = false;
+            roundEvent.InvalidationReason = BattleRoundEventInvalidationReason.BattleTerminated;
+        }
+        battle.Status = BattleStatus.Voided;
+        battle.VoidedByUserId = organizerUserId;
+        battle.VoidReason = reason;
+        battle.VoidedAtUtc = now;
+        battle.Version = Guid.NewGuid().ToByteArray();
+        battle.TournamentMatchId = null;
+        battle.TournamentMatch = null;
+        battle.VoidedTournamentMatchId = ownerMatch.Id;
+        battle.VoidedTournamentMatch = ownerMatch;
+        ownerMatch.Battle = null;
+    }
 
     private async Task TryCompleteReorderAsync(TournamentMatch match, int sequenceNo, DateTime now)
     {

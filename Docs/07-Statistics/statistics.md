@@ -1,5 +1,28 @@
 # 戰績規格
 
+## 資料來源與排除原則
+
+不建立 Statistics Table；每次由 Battle、BattleLineup、BattleRound、有效 BattleRoundEvent 與 TournamentMatch 聚合。
+
+玩家主要分區固定為：
+
+1. 快速對戰。
+2. Tournament 個人賽。
+3. Tournament 團體隊伍結果。
+4. Tournament 團體實際上場小局。
+
+四者不可合成一個主要勝率。陀螺總覽可合併有效來源，但必須提供快速／個人／團體來源篩選及各來源樣本數。
+
+排除：
+
+- 尚未接受、已拒絕或撤回的快速邀請。
+- 快速對戰取消後已硬刪除的 aggregate。
+- Voided Battle。
+- 未完成 Round 及標記為無效的 Event。
+- Tournament 取消或棄權當下尚未完成 Round 的 Event。
+
+Tournament 取消前合法完成的 Match／Battle／Round 依其原來源保留於戰績；Bye 與 Walkover 不建立虛構 Battle 或陀螺勝敗。
+
 ## 玩家總戰績
 
 至少：
@@ -10,6 +33,8 @@
 - 得分
 - 失分
 - 因發射失誤失分
+- B Side 勝／敗與勝率
+- X Side 勝／敗與勝率
 
 勝率：
 
@@ -17,9 +42,17 @@
 
 沒有比賽時避免除以零。
 
-只聚合有效完成或以棄權結束的 Battle。被拒絕或撤回的邀請，以及由裁判取消並硬刪除的 Battle，不得影響任何統計。
+快速／Tournament 個人 Forfeited Battle 依 `WinningPlayerId` 計算玩家勝敗；團體隊伍結果依 `TournamentMatch.WinnerEntryId`／`LoserEntryId`。棄權前已完成的 Round 依有效事件計算玩家與陀螺戰績；棄權當下尚未完成 Round 的所有事件全部排除。
 
-Forfeited Battle 依 `WinningPlayerId` 計算玩家勝敗。棄權前已完成的 Round 依有效事件計算玩家與陀螺戰績；棄權當下尚未完成 Round 的所有事件全部排除。
+### B／X Side 歸屬與篩選
+
+- `Battle.SideADesignation` 表示 Battle Side A 被指定的站位，另一方必為相反站位。
+- 快速對戰與個人賽依玩家是 Battle Player A 或 Player B 換算其 B／X Side。
+- 團體賽隊伍結果依玩家所屬 `TournamentEntry` 是 Side A 或 Side B 換算；玩家實際小局與陀螺戰績依 `BattleRound.PlayerAId`／`PlayerBId` 換算，隊員繼承所屬隊伍的 Side。
+- B Side 與 X Side 勝率分母各自只包含該 Side 的有效勝敗樣本，不得共用總樣本數。
+- 未保存 `SideADesignation` 的舊資料可保留在「全部 Side」總計，但不得推測或計入 B／X 分項勝率。
+- 個人分項與陀螺戰績都必須支援全部／B Side／X Side 篩選；對戰歷史必須顯示使用者當場 Side。
+- Side 樣本數以該查詢實際使用的整場勝敗或完成 Round 為分母；UI 必須標示樣本數，0 樣本勝率顯示 0 或無資料，不可造成除以零。
 
 ## 陀螺戰績
 
@@ -33,10 +66,14 @@ Forfeited Battle 依 `WinningPlayerId` 計算玩家勝敗。棄權前已完成�
 - 失分
 - 因發射失誤失分
 - 因發射失誤造成對手得分
+- B Side 勝／敗與勝率
+- X Side 勝／敗與勝率
 
 勝負以該陀螺在 BattleRound 中作為參戰陀螺的有效 BattleResult 判定。
 
 LaunchFaultPenalty 是分數事件，不應單獨把整個 Round 判為敗場。
+
+不同 Tournament RuleSet 的 ScoreToWin 不同，因此陀螺比較以完成 Round、平均每局得失分、ResultType、LaunchFault 與對位為主，不以整場總分建立強弱排行榜。
 
 ## 對手戰績
 
@@ -65,10 +102,26 @@ LaunchFaultPenalty 是分數事件，不應單獨把整個 Round 判為敗場。
 
 ## 排序
 
-陀螺列表：
+個人分項列表與陀螺列表：
 
 - Score DESC/ASC
 - AgainstScore DESC/ASC
+- ScoreDifference DESC/ASC
 - WinRate DESC/ASC
+- BSideWinRate DESC/ASC
+- XSideWinRate DESC/ASC
 
-所有排序由 Server / LINQ / SQL 執行，不在前端一次載入全部資料後排序。
+兩份列表都必須提供來源篩選與全部／B Side／X Side 篩選。Side 篩選後，勝敗、得失分、平均值、ResultType 與發射失誤均以篩選後樣本重新聚合，不得只隱藏前端列。
+
+所有篩選、聚合與排序由 Server 執行，不在前端一次載入全部資料後排序。穩定次排序使用名稱或 Id，只處理顯示順序，不改變統計勝負。
+
+## 對戰歷史
+
+每筆至少顯示：
+
+- BattleId、來源、完成時間。
+- 對手玩家或隊伍 DisplayName。
+- 自己／對方得分與勝負。
+- 使用者當場為 B Side、X Side 或未記錄。
+
+歷史可連回授權範圍內的 Battle 詳情。進行中的 Battle 不屬於戰績歷史，必須由獨立的 active battle 清單提供返回入口。

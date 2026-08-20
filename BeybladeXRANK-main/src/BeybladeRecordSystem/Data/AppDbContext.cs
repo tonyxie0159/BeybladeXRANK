@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<BattleRound> BattleRounds => Set<BattleRound>();
     public DbSet<BattleRoundEvent> BattleRoundEvents => Set<BattleRoundEvent>();
     public DbSet<BattleRoundRevision> BattleRoundRevisions => Set<BattleRoundRevision>();
+    public DbSet<QuickBattleInvitation> QuickBattleInvitations => Set<QuickBattleInvitation>();
     public DbSet<Tournament> Tournaments => Set<Tournament>();
     public DbSet<TournamentEntry> TournamentEntries => Set<TournamentEntry>();
     public DbSet<TournamentEntryMember> TournamentEntryMembers => Set<TournamentEntryMember>();
@@ -45,13 +46,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 t.HasCheckConstraint("CK_Battle_DifferentPlayers", "PlayerAId IS NULL OR PlayerBId IS NULL OR PlayerAId <> PlayerBId");
                 t.HasCheckConstraint("CK_Battle_ScoreToWin", "ScoreToWin > 0");
                 t.HasCheckConstraint("CK_Battle_Scores", "SideAScore >= 0 AND SideBScore >= 0");
-                t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND TournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND TournamentMatchId IS NOT NULL)");
+                t.HasCheckConstraint("CK_Battle_LineupSequenceNo", "LineupSequenceNo > 0");
+                t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND Status <> 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND ((Status <> 7 AND TournamentMatchId IS NOT NULL AND VoidedTournamentMatchId IS NULL) OR (Status = 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NOT NULL AND VoidedByUserId IS NOT NULL AND VoidedAtUtc IS NOT NULL AND LENGTH(TRIM(VoidReason)) > 0 AND VoidSnapshot IS NOT NULL)))");
             });
+            entity.Property(x => x.VoidReason).HasMaxLength(500);
             entity.Property(x => x.Version).IsConcurrencyToken();
             entity.HasOne(x => x.PlayerA).WithMany().HasForeignKey(x => x.PlayerAId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.PlayerB).WithMany().HasForeignKey(x => x.PlayerBId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.CreatedByUser).WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.VoidedByUser).WithMany().HasForeignKey(x => x.VoidedByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.TournamentMatch).WithOne(x => x.Battle).HasForeignKey<Battle>(x => x.TournamentMatchId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.VoidedTournamentMatch).WithMany(x => x.VoidedBattles).HasForeignKey(x => x.VoidedTournamentMatchId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<QuickBattleInvitation>(entity =>
+        {
+            entity.HasIndex(x => new { x.InviteeUserId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.InviterUserId, x.InviteeUserId }).IsUnique();
+            entity.Property(x => x.Version).IsConcurrencyToken();
+            entity.HasOne(x => x.InviterUser).WithMany().HasForeignKey(x => x.InviterUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.InviteeUser).WithMany().HasForeignKey(x => x.InviteeUserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BattleLineup>(entity =>
@@ -116,6 +130,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<BattleRoundRevision>(entity =>
         {
+            entity.Property(x => x.Reason).HasMaxLength(500);
+            entity.Property(x => x.PreviousBattleSnapshot).IsRequired();
+            entity.Property(x => x.NewBattleSnapshot).IsRequired();
             entity.HasOne(x => x.BattleRound).WithMany(x => x.Revisions).HasForeignKey(x => x.BattleRoundId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.ChangedByUser).WithMany().HasForeignKey(x => x.ChangedByUserId).OnDelete(DeleteBehavior.Restrict);
         });

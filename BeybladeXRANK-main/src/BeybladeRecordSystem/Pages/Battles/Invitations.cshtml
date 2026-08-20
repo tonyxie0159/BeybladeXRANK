@@ -1,0 +1,67 @@
+@page
+@using BeybladeRecordSystem.Infrastructure
+@model BeybladeRecordSystem.Pages.Battles.InvitationsModel
+@{ ViewData["Title"] = "快速對戰邀請"; }
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>快速對戰邀請</h1>
+    <div><a asp-page="Invitations" class="btn btn-outline-secondary">重新整理</a> <a asp-page="Create" class="btn btn-primary">發起邀請</a></div>
+</div>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
+
+<h2 class="h4">準備中與進行中的對戰</h2>
+@if (!Model.ActiveBattles.Any()) { <div class="alert alert-secondary">目前沒有可繼續的快速對戰。</div> }
+<div class="list-group mb-4">
+@foreach (var active in Model.ActiveBattles)
+{
+    var battle = active.Battle;
+    var opponent = battle.PlayerAId == User.GetRequiredUserId() ? battle.PlayerB : battle.PlayerA;
+    var destinationPage = active.Target switch
+    {
+        BeybladeRecordSystem.Services.QuickBattleResumeTarget.Setup => "Setup",
+        BeybladeRecordSystem.Services.QuickBattleResumeTarget.Reorder => "Reorder",
+        _ => "Battle"
+    };
+    var actionLabel = active.Target switch
+    {
+        BeybladeRecordSystem.Services.QuickBattleResumeTarget.Setup => "繼續準備",
+        BeybladeRecordSystem.Services.QuickBattleResumeTarget.Reorder => "繼續重排",
+        _ => battle.Status == BeybladeRecordSystem.Domain.Enums.BattleStatus.VictoryPendingCompletion ? "確認對戰結果" : "返回計分"
+    };
+    <a asp-page="@destinationPage" asp-route-id="@battle.Id" class="list-group-item list-group-item-action d-flex flex-column flex-md-row justify-content-between gap-1">
+        <span>對手：<strong>@opponent.DisplayName</strong></span>
+        <span>@actionLabel →</span>
+    </a>
+}
+</div>
+
+<h2 class="h4">收到的邀請</h2>
+@if (!Model.Incoming.Any()) { <div class="alert alert-secondary">目前沒有待回覆的邀請。</div> }
+<div class="list-group mb-4">
+@foreach (var invitation in Model.Incoming)
+{
+    <div class="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+        <span><strong>@invitation.InviterUser.DisplayName</strong> 邀請你進行快速對戰</span>
+        <span>
+            <form method="post" asp-page-handler="Accept" class="d-inline"><input type="hidden" name="id" value="@invitation.Id" /><button class="btn btn-success">接受</button></form>
+            <form method="post" asp-page-handler="Decline" class="d-inline"><input type="hidden" name="id" value="@invitation.Id" /><button class="btn btn-outline-danger">拒絕</button></form>
+        </span>
+    </div>
+}
+</div>
+
+<h2 class="h4">已送出的邀請</h2>
+@if (!Model.Outgoing.Any()) { <div class="alert alert-secondary">目前沒有等待對方回覆的邀請。</div> }
+<div class="list-group">
+@foreach (var invitation in Model.Outgoing)
+{
+    <div class="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+        <span>等待 <strong>@invitation.InviteeUser.DisplayName</strong> 回覆</span>
+        <form method="post" asp-page-handler="Withdraw"><input type="hidden" name="id" value="@invitation.Id" /><button class="btn btn-outline-danger">撤回邀請</button></form>
+    </div>
+}
+</div>
+
+@section Scripts {
+    <script>window.setTimeout(() => window.location.reload(), 10000);</script>
+}
