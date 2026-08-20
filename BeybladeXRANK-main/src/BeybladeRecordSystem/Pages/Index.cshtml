@@ -1,4 +1,67 @@
 @page
 @model IndexModel
-@{ ViewData["Title"] = "首頁"; }
-@if (User.Identity?.IsAuthenticated == true) { <div class="py-3"><h1 class="display-6">Beyblade 戰績</h1><p class="lead">歡迎回來，@User.Identity.Name。</p><div class="d-grid gap-3 col-md-6"><a asp-page="/Battles/Create" class="btn btn-primary btn-lg py-3">開始對戰</a><a asp-page="/Beyblades/Index" class="btn btn-outline-primary btn-lg py-3">我的陀螺</a><a asp-page="/Statistics/Index" class="btn btn-outline-primary btn-lg py-3">我的戰績</a></div></div> } else { <div class="text-center py-5"><h1 class="display-5">Beyblade 戰績</h1><p class="lead">記錄每一場 1v1 對戰。</p><a asp-page="/Account/Login" class="btn btn-primary btn-lg">登入</a><a asp-page="/Account/Register" class="btn btn-outline-primary btn-lg">建立帳號</a></div> }
+@{ ViewData["Title"] = "首頁"; ViewData["FullBleed"] = true; }
+
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <section class="home-shell container">
+        <div class="welcome-panel">
+            <div>
+                <p class="eyebrow">WELCOME BACK, BLADER</p>
+                <h1>準備好迎接<br /><span>下一場對戰</span>了嗎？</h1>
+                <p class="welcome-copy">歡迎回來，<strong>@User.Identity.Name</strong>。建立對戰、調整陀螺配置，並持續刷新你的最佳戰績。</p>
+            </div>
+            <div class="arena-graphic" aria-hidden="true">
+                <div class="arena-ring"><span>X</span></div>
+            </div>
+        </div>
+
+        <div class="section-heading">
+            <div><p class="eyebrow">QUICK ACTIONS</p><h2>快速開始</h2></div>
+            <p>選擇你現在想進行的操作</p>
+        </div>
+        <div class="action-grid">
+            <a asp-page="/Battles/Create" class="action-card action-card-primary">
+                <span class="action-number">01</span>
+                <span class="action-icon" aria-hidden="true">⚔</span>
+                <span class="action-content"><strong>開始對戰</strong><small>建立邀請並進入對戰流程</small></span>
+                <span class="action-arrow" aria-hidden="true">→</span>
+            </a>
+            <a asp-page="/Beyblades/Index" class="action-card">
+                <span class="action-number">02</span>
+                <span class="action-icon" aria-hidden="true">◎</span>
+                <span class="action-content"><strong>我的陀螺</strong><small>管理你的陀螺收藏與配置</small></span>
+                <span class="action-arrow" aria-hidden="true">→</span>
+            </a>
+            <a asp-page="/Statistics/Index" class="action-card">
+                <span class="action-number">03</span>
+                <span class="action-icon" aria-hidden="true">↗</span>
+                <span class="action-content"><strong>我的戰績</strong><small>查看歷史表現與數據分析</small></span>
+                <span class="action-arrow" aria-hidden="true">→</span>
+            </a>
+        </div>
+    </section>
+}
+else
+{
+    <section class="hero container">
+        <div class="hero-copy">
+            <p class="eyebrow"><span></span> BATTLE RECORD SYSTEM</p>
+            <h1>每一次交鋒<br />都值得被<span>記錄</span></h1>
+            <p class="hero-lead">專為 Beyblade X 玩家打造的對戰紀錄系統。管理陀螺、追蹤戰績，讓每一場勝利都有跡可循。</p>
+            <div class="hero-actions">
+                <a asp-page="/Account/Register" class="btn btn-primary btn-lg">立即開始 <span aria-hidden="true">→</span></a>
+                <a asp-page="/Account/Login" class="btn btn-outline-light btn-lg">登入帳號</a>
+            </div>
+            <div class="hero-features" aria-label="系統特色">
+                <span><i>✓</i> 完整對戰紀錄</span><span><i>✓</i> 個人戰績分析</span><span><i>✓</i> 手機優先設計</span>
+            </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+            <div class="speed-line line-one"></div><div class="speed-line line-two"></div>
+            <div class="blade-orbit orbit-outer"></div><div class="blade-orbit orbit-inner"></div>
+            <div class="blade"><span>X</span></div>
+            <span class="visual-label label-top">GEAR UP</span><span class="visual-label label-bottom">LET IT RIP</span>
+        </div>
+    </section>
+}
