@@ -1,4 +1,8 @@
 @page
 @model BeybladeRecordSystem.Pages.Account.LogoutModel
 @{ ViewData["Title"] = "登出"; }
-<form method="post"><p>確定要登出嗎？</p><button class="btn btn-danger">登出</button><a asp-page="/Index" class="btn btn-outline-secondary">取消</a></form>
+<div class="auth-shell">
+    <div class="card auth-card text-center"><p class="eyebrow">SIGN OUT</p><h1>確定要登出嗎？</h1><p class="text-muted mb-4">登出後需要再次登入，才能查看私人對戰與戰績。</p>
+        <form method="post" class="d-grid gap-2"><button class="btn btn-danger btn-lg">登出</button><a asp-page="/Index" class="btn btn-outline-secondary">留在網站</a></form>
+    </div>
+</div>

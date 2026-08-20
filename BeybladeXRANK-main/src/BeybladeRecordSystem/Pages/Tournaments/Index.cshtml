@@ -4,11 +4,10 @@
 @using BeybladeRecordSystem.Domain.Tournaments
 @using BeybladeRecordSystem.Services
 @{ ViewData["Title"] = "比賽房間"; }
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1>比賽房間</h1>
-    <div class="d-flex gap-2"><a asp-page="Index" asp-route-filter="@Model.Filter" asp-route-pageNumber="@Model.PageNumber" class="btn btn-outline-secondary">手動刷新</a><a asp-page="Create" class="btn btn-primary">建立比賽</a></div>
-</div>
-<form method="get" class="row g-2 mb-3">
+<header class="page-header"><div><p class="eyebrow">TOURNAMENTS</p><h1>比賽房間</h1><p>報名賽事、處理待辦，或建立自己的比賽。</p></div>
+    <div class="page-actions"><a asp-page="Index" asp-route-filter="@Model.Filter" asp-route-pageNumber="@Model.PageNumber" class="btn btn-outline-secondary">手動刷新</a><a asp-page="Create" class="btn btn-primary">＋ 建立比賽</a></div>
+</header>
+<form method="get" class="toolbar">
     <div class="col-sm-8 col-md-5">
         <select asp-for="Filter" asp-items="Html.GetEnumSelectList<TournamentListFilter>()" class="form-select"></select>
     </div>
@@ -16,7 +15,7 @@
 </form>
 @if (!Model.Result.Items.Any())
 {
-    <div class="alert alert-secondary">目前沒有符合條件的比賽。</div>
+    <div class="empty-state"><h2>目前沒有符合條件的比賽</h2><p class="text-muted">調整篩選條件，或建立第一場比賽。</p><a asp-page="Create" class="btn btn-primary">建立比賽</a></div>
 }
 <div class="row g-3">
 @foreach (var item in Model.Result.Items)

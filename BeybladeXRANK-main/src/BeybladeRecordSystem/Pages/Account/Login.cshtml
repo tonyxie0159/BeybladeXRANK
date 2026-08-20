@@ -1,4 +1,14 @@
 @page
 @model BeybladeRecordSystem.Pages.Account.LoginModel
 @{ ViewData["Title"] = "登入"; }
-<div class="row justify-content-center"><div class="col-sm-8 col-md-5"><h1>登入</h1><form method="post" class="card card-body shadow-sm"><div asp-validation-summary="ModelOnly" class="text-danger"></div><label asp-for="Account" class="form-label">帳號</label><input asp-for="Account" class="form-control mb-3" autocomplete="username" /><label asp-for="Password" class="form-label">密碼</label><input asp-for="Password" type="password" class="form-control mb-3" autocomplete="current-password" /><button class="btn btn-primary btn-lg">登入</button><a asp-page="/Account/Register" class="btn btn-link mt-2">建立帳號</a></form></div></div>
+<div class="auth-shell">
+    <header class="auth-heading"><p class="eyebrow">WELCOME BACK</p><h1>登入</h1><p>繼續你的對戰與賽事。</p></header>
+    <form method="post" class="card auth-card">
+        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+        <div class="mb-3"><label asp-for="Account" class="form-label">帳號</label><input asp-for="Account" class="form-control" autocomplete="username" autofocus /><span asp-validation-for="Account" class="text-danger small"></span></div>
+        <div class="mb-4"><label asp-for="Password" class="form-label">密碼</label><input asp-for="Password" type="password" class="form-control" autocomplete="current-password" /><span asp-validation-for="Password" class="text-danger small"></span></div>
+        <button class="btn btn-primary btn-lg w-100">登入</button>
+    </form>
+    <p class="auth-footer">還沒有帳號？ <a asp-page="/Account/Register">建立帳號</a></p>
+</div>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

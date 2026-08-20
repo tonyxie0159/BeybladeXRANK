@@ -11,7 +11,7 @@
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：123 passed、0 failed、0 skipped。現有測試以 Domain／Service／Persistence／PageModel 為主，不能代替完整 HTTP、瀏覽器、手機或實際部署驗收。
+結果：138 passed、0 failed、0 skipped。現有測試以 Domain／Service／Persistence／PageModel 為主，不能代替完整 HTTP、瀏覽器、手機或實際部署驗收。
 
 ## 已有自動證據
 
@@ -98,16 +98,26 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 
 ## 有效需求但尚未完成
 
-### P2 工程與 regression 證據
+### P2 UI／UX 與 Web functional 證據
 
-- [ ] 使用兩個獨立 DbContext 模擬最後名額並行報名，只允許一個成功。
-- [ ] 對完成 Round／Battle／Match 的重複 HTTP POST 驗證不重複計分、晉級或通知。
+- [ ] Register、Login、Logout、Settings 以瀏覽器完整操作。
+- [ ] 所有登入後主要頁面以桌面與手機尺寸通過導覽、可讀性、基本表單與水平溢出檢查。
+- [ ] 快速對戰與 Tournament 以多帳號完成主要流程。
 - [ ] 建立 Razor Pages authentication／authorization／anti-forgery integration tests。
 - [ ] 建立私密 Lineup 不外洩及公開 Tournament read model 的 integration tests。
 
+### 已延後的併發與壓力證據
+
+- [ ] 使用兩個獨立 DbContext 模擬最後名額並行報名，只允許一個成功。
+- [ ] 對完成 Round／Battle／Match 的重複 HTTP POST 驗證不重複計分、晉級或通知。
+- [ ] 容量、長時間 polling 與高頻寫入壓力測試。
+
+以上項目依目前產品優先順序延後，不阻擋 UI／UX 與一般使用者功能驗收。
+
 ## 人工與部署驗收
 
-- [ ] Register、Login、Logout、Settings 以瀏覽器完整操作。
+2026-08-20 UI 本機瀏覽器證據：公開首頁、Login 與登入後首頁可正常載入；登入後主導覽的 Home、Battles Create／Invitations、Beyblades Index／Create、Tournaments Index／Create、Statistics Index、Account Settings、Privacy 共 10 條 GET 路徑均有正確標題、無頁面錯誤、無桌面版水平溢出，且瀏覽器 console 無 error／warning。Register POST 以獨立測試資料目錄及有效 anti-forgery token 驗證成功。手機 viewport 套用與 Logout POST 遭本機瀏覽器控制安全層阻擋，仍保留未驗收狀態。
+
 - [ ] 快速邀請、私密提交、edit request、Side、計分、重排、Revision、棄權與取消以兩個帳號操作。
 - [ ] Tournament 個人、雙人六顆／四顆、三人 4／5 分制以多帳號完成至少一場。
 - [ ] 手機與平板尺寸不水平溢出，重要裁判按鈕可安全操作且不只依顏色傳達狀態。

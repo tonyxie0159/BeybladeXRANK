@@ -1,8 +1,18 @@
 @page "{id:int}"
 @model BeybladeRecordSystem.Pages.Battles.BattleModel
 @using BeybladeRecordSystem.Domain.Enums
-@{ ViewData["Title"] = "對戰裁判"; }
-<div class="sticky-top bg-body pt-2 pb-3 border-bottom mb-3"><div class="row text-center align-items-center"><div class="col"><strong>@Model.SideALabel</strong><div class="display-4">@Model.Battle.PlayerAScore</div></div><div class="col-2">vs</div><div class="col"><strong>@Model.SideBLabel</strong><div class="display-4">@Model.Battle.PlayerBScore</div></div></div></div>
+@{
+    ViewData["Title"] = "對戰裁判";
+    var sideAClass = Model.Battle.SideADesignation == BattleSide.B ? "side-b" : "side-x";
+    var sideBClass = Model.Battle.SideADesignation == BattleSide.B ? "side-x" : "side-b";
+}
+<div class="sticky-top scoreboard" aria-label="目前比分">
+    <div class="row text-center align-items-center g-2">
+        <div class="col battle-score @sideAClass"><strong>@Model.SideALabel</strong><div class="display-4">@Model.Battle.PlayerAScore</div></div>
+        <div class="col-auto score-divider"><small>目標 @Model.Battle.ScoreToWin 分</small><strong>VS</strong></div>
+        <div class="col battle-score @sideBClass"><strong>@Model.SideBLabel</strong><div class="display-4">@Model.Battle.PlayerBScore</div></div>
+    </div>
+</div>
 @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
 @if (Model.Battle.Status == BattleStatus.VictoryPendingCompletion) { <div class="alert alert-warning"><strong>已達勝利條件</strong>，請確認紀錄後按「對戰結束」。</div>@if (Model.CanOperate) { <form method="post" asp-page-handler="Finish"><input type="hidden" name="id" value="@Model.Battle.Id" /><button class="btn btn-danger btn-lg w-100">對戰結束</button></form> } }
 @if (Model.Battle.Status == BattleStatus.Completed) { <div class="alert alert-success">對戰已完成。</div> }

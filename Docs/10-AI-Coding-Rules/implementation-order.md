@@ -20,7 +20,7 @@
 ## Step 2：Tournament 報名生命週期
 
 1. [已完成] 主辦方 Tournament participant invitation。
-2. [已完成] 接受／拒絕、容量保護與唯一 Entry；最後名額的雙 DbContext 壓力測試仍歸 Step 6。
+2. [已完成] 接受／拒絕、容量保護與唯一 Entry；最後名額的雙 DbContext 壓力測試延後至 Step 7。
 3. [已完成] 個人、整隊、系統配隊一致的 ReopenRegistration。
 
 ## Step 3：No-show 與 WaitingForMe
@@ -42,14 +42,22 @@
 2. [已完成] 循環／瑞士必要加賽。
 3. [已完成] 防止仍需冠軍加賽時提前 Completed。
 
-## Step 6：併發與 Web integration
+## Step 6：UI／UX、瀏覽器與 Web integration
+
+- 全站 responsive 視覺、導覽、表單、表格、狀態及空狀態一致化。
+- 桌面／手機逐頁操作及 Register、Login、Logout、Settings 完整流程。
+- 多帳號驗收 Quick Battle、Tournament 私密資料、Side、polling 與完成流程。
+- Authentication、authorization、anti-forgery、private/public data integration tests。
+
+## Step 7：併發與壓力測試（延後）
 
 - 兩個 DbContext 的最後名額競爭。
 - 重複 POST 不重複計分／推進。
-- Authentication、authorization、anti-forgery、private/public data integration tests。
-- 多帳號與手機 UI 人工驗收。
+- 容量、polling 與高頻寫入壓力測試。
 
-## Step 7：部署安全與實測
+此步驟不阻擋 Step 6 的 UI／UX 與完整單一使用者網站流程驗收。
+
+## Step 8：部署安全與實測
 
 - ForwardedHeaders、可信 proxy／network、Secure Cookie。
 - Docker build、migration、restart、SQLite／keys persistence。

@@ -1,60 +1,126 @@
 @page
 @using BeybladeRecordSystem.Infrastructure
 @model IndexModel
-@{ ViewData["Title"] = "首頁"; }
-@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@{
+    ViewData["Title"] = "首頁";
+    ViewData["FullBleed"] = true;
+}
+
 @if (User.Identity?.IsAuthenticated == true)
 {
-    <div class="py-3">
-        <h1 class="display-6">Beyblade 戰績</h1>
-        <p class="lead">歡迎回來，@User.Identity.Name。</p>
-        @if (Model.PendingQuickBattleInvitations > 0)
+    <div class="container home-shell">
+        @if (TempData["Success"] is string success)
         {
-            <div class="alert alert-warning"><a asp-page="/Battles/Invitations" class="alert-link">你有 @Model.PendingQuickBattleInvitations 筆快速對戰邀請待處理</a></div>
+            <div class="alert alert-success mb-4">@success</div>
         }
-        @if (Model.ActiveQuickBattles.Any())
+
+        <section class="welcome-panel">
+            <div>
+                <p class="eyebrow"><span></span>PLAYER DASHBOARD</p>
+                <h1>歡迎回來，<span>@User.Identity.Name</span></h1>
+                <p class="welcome-copy">從這裡繼續等待中的對戰、進入比賽房間，或查看最新戰績。需要你處理的項目會優先顯示。</p>
+            </div>
+            <div class="arena-graphic" aria-hidden="true"><div class="arena-ring">X</div></div>
+        </section>
+
+        @if (Model.PendingQuickBattleInvitations > 0 || Model.ActiveQuickBattles.Any())
         {
-            <section class="card card-body mb-3 col-lg-8">
-                <h2 class="h5">繼續快速對戰</h2>
-                <div class="list-group list-group-flush">
-                    @foreach (var active in Model.ActiveQuickBattles)
-                    {
-                        var battle = active.Battle;
-                        var opponent = battle.PlayerAId == User.GetRequiredUserId() ? battle.PlayerB : battle.PlayerA;
-                        var destinationPage = active.Target switch
-                        {
-                            BeybladeRecordSystem.Services.QuickBattleResumeTarget.Setup => "/Battles/Setup",
-                            BeybladeRecordSystem.Services.QuickBattleResumeTarget.Reorder => "/Battles/Reorder",
-                            _ => "/Battles/Battle"
-                        };
-                        var actionLabel = active.Target switch
-                        {
-                            BeybladeRecordSystem.Services.QuickBattleResumeTarget.Setup => "繼續準備",
-                            BeybladeRecordSystem.Services.QuickBattleResumeTarget.Reorder => "繼續重排",
-                            _ => battle.Status == BeybladeRecordSystem.Domain.Enums.BattleStatus.VictoryPendingCompletion ? "確認對戰結果" : "返回計分"
-                        };
-                        <a asp-page="@destinationPage" asp-route-id="@battle.Id" class="list-group-item list-group-item-action d-flex flex-column flex-md-row justify-content-between gap-1 px-0">
-                            <span>對手：<strong>@opponent.DisplayName</strong></span>
-                            <span>@actionLabel →</span>
-                        </a>
-                    }
+            <section aria-labelledby="pending-actions-title">
+                <div class="section-heading">
+                    <div><p class="eyebrow"><span></span>NEXT ACTION</p><h2 id="pending-actions-title">等待你處理</h2></div>
+                    <p>先完成進行中的流程，避免遺漏邀請或對戰</p>
                 </div>
+
+                @if (Model.PendingQuickBattleInvitations > 0)
+                {
+                    <a asp-page="/Battles/Invitations" class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2 text-decoration-none">
+                        <span><strong>@Model.PendingQuickBattleInvitations 筆快速對戰邀請</strong><br /><small>查看邀請人並接受或拒絕</small></span>
+                        <span aria-hidden="true">前往處理 →</span>
+                    </a>
+                }
+
+                @if (Model.ActiveQuickBattles.Any())
+                {
+                    <div class="list-group">
+                        @foreach (var active in Model.ActiveQuickBattles)
+                        {
+                            var battle = active.Battle;
+                            var opponent = battle.PlayerAId == User.GetRequiredUserId() ? battle.PlayerB : battle.PlayerA;
+                            var destinationPage = active.Target switch
+                            {
+                                BeybladeRecordSystem.Services.QuickBattleResumeTarget.Setup => "/Battles/Setup",
+                                BeybladeRecordSystem.Services.QuickBattleResumeTarget.Reorder => "/Battles/Reorder",
+                                _ => "/Battles/Battle"
+                            };
+                            var actionLabel = active.Target switch
+                            {
+                                BeybladeRecordSystem.Services.QuickBattleResumeTarget.Setup => "繼續準備",
+                                BeybladeRecordSystem.Services.QuickBattleResumeTarget.Reorder => "繼續重排",
+                                _ => battle.Status == BeybladeRecordSystem.Domain.Enums.BattleStatus.VictoryPendingCompletion ? "確認對戰結果" : "返回計分"
+                            };
+                            <a asp-page="@destinationPage" asp-route-id="@battle.Id" class="list-group-item list-group-item-action d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 p-3">
+                                <span><small class="text-muted d-block">快速對戰 #@battle.Id</small>對手：<strong>@opponent.DisplayName</strong></span>
+                                <strong class="text-nowrap">@actionLabel →</strong>
+                            </a>
+                        }
+                    </div>
+                }
             </section>
         }
-        <div class="d-grid gap-3 col-md-6">
-            <a asp-page="/Battles/Create" class="btn btn-primary btn-lg py-3">發起快速對戰</a>
-            <a asp-page="/Battles/Invitations" class="btn btn-outline-primary btn-lg py-3">對戰邀請</a>
-            <a asp-page="/Beyblades/Index" class="btn btn-outline-primary btn-lg py-3">我的陀螺</a>
-            <a asp-page="/Statistics/Index" class="btn btn-outline-primary btn-lg py-3">我的戰績</a>
-        </div>
+
+        <section aria-labelledby="quick-actions-title">
+            <div class="section-heading">
+                <div><p class="eyebrow"><span></span>QUICK START</p><h2 id="quick-actions-title">開始使用</h2></div>
+                <p>常用功能集中在這裡</p>
+            </div>
+            <div class="action-grid">
+                <a asp-page="/Battles/Create" class="action-card action-card-primary">
+                    <span class="action-number">01</span><span class="action-icon" aria-hidden="true">⚔</span>
+                    <span class="action-content"><strong>發起快速對戰</strong><small>邀請對手並開始 1 對 1 對戰</small></span><span class="action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a asp-page="/Tournaments/Index" class="action-card">
+                    <span class="action-number">02</span><span class="action-icon" aria-hidden="true">◆</span>
+                    <span class="action-content"><strong>進入比賽房間</strong><small>報名、主辦並追蹤賽程</small></span><span class="action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a asp-page="/Statistics/Index" class="action-card">
+                    <span class="action-number">03</span><span class="action-icon" aria-hidden="true">▥</span>
+                    <span class="action-content"><strong>查看我的戰績</strong><small>比較勝率、得失分與 B／X Side 表現</small></span><span class="action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a asp-page="/Battles/Invitations" class="action-card">
+                    <span class="action-number">04</span><span class="action-icon" aria-hidden="true">◎</span>
+                    <span class="action-content"><strong>對戰中心</strong><small>處理邀請並返回進行中的對戰</small></span><span class="action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a asp-page="/Beyblades/Index" class="action-card">
+                    <span class="action-number">05</span><span class="action-icon" aria-hidden="true">✦</span>
+                    <span class="action-content"><strong>管理我的陀螺</strong><small>新增、改名或整理參戰陀螺</small></span><span class="action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a asp-page="/Account/Settings" class="action-card">
+                    <span class="action-number">06</span><span class="action-icon" aria-hidden="true">●</span>
+                    <span class="action-content"><strong>帳號設定</strong><small>更新顯示名稱</small></span><span class="action-arrow" aria-hidden="true">→</span>
+                </a>
+            </div>
+        </section>
     </div>
 }
 else
 {
-    <div class="text-center py-5">
-        <h1 class="display-5">Beyblade 戰績</h1>
-        <p class="lead">記錄每一場 1v1 對戰。</p>
-        <a asp-page="/Account/Login" class="btn btn-primary btn-lg">登入</a>
-        <a asp-page="/Account/Register" class="btn btn-outline-primary btn-lg">建立帳號</a>
-    </div>
+    <section class="container hero">
+        <div class="hero-copy">
+            <p class="eyebrow"><span></span>BEYBLADE X BATTLE TRACKER</p>
+            <h1>每一場對戰，<span>都有跡可循。</span></h1>
+            <p class="hero-lead">從快速對戰到完整錦標賽，用一致的 B／X Side 流程記錄陣容、比分、排名與每一次判決。</p>
+            <div class="hero-actions">
+                <a asp-page="/Account/Register" class="btn btn-primary btn-lg">免費建立帳號</a>
+                <a asp-page="/Account/Login" class="btn btn-outline-secondary btn-lg">登入</a>
+            </div>
+            <div class="hero-features" aria-label="主要功能">
+                <span><i>✓</i> 快速對戰</span><span><i>✓</i> 賽事管理</span><span><i>✓</i> B／X Side 戰績</span>
+            </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+            <div class="blade"><span>X</span></div><div class="blade-orbit orbit-outer"></div><div class="blade-orbit orbit-inner"></div>
+            <div class="speed-line line-one"></div><div class="speed-line line-two"></div>
+            <span class="visual-label label-top">READY TO LAUNCH</span><span class="visual-label label-bottom">RANK YOUR BATTLE</span>
+        </div>
+    </section>
 }

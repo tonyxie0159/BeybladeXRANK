@@ -1,8 +1,7 @@
 @page
 @model BeybladeRecordSystem.Pages.Battles.CreateModel
-@{ ViewData["Title"] = "建立對戰"; }
-<h1>建立對戰</h1>
-<p class="text-muted">先送出站內邀請。對方接受後，雙方才會各自選擇自己的三顆陀螺。</p>
+@{ ViewData["Title"] = "發起快速對戰"; }
+<header class="page-header"><div><p class="eyebrow">QUICK BATTLE</p><h1>發起快速對戰</h1><p>選擇對手並送出站內邀請；對方接受後，雙方才會各自密封選擇三顆陀螺。</p></div><div class="page-actions"><a asp-page="Invitations" class="btn btn-outline-secondary">前往對戰中心</a></div></header>
 <form method="post" class="card card-body col-lg-7">
     <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
     <label asp-for="OpponentId" class="form-label">選擇對手</label>
@@ -10,6 +9,6 @@
         <option value="0">請選擇</option>
         @foreach (var opponent in Model.Opponents) { <option value="@opponent.Id">@opponent.DisplayName</option> }
     </select>
+    <div class="form-text text-muted mb-4">邀請送出後可在對戰中心查看狀態或撤回。</div>
     <button class="btn btn-primary btn-lg">送出對戰邀請</button>
-    <a asp-page="Invitations" class="btn btn-link">查看待處理邀請</a>
 </form>

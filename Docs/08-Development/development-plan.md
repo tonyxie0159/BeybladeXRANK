@@ -13,7 +13,7 @@
 - Tournament 出賽、Lineup、推進、取消、Void／Reopen 與下游保護。
 - 來源分區、B／X Side、個人／陀螺／對手／歷史統計。
 - runtime data directory、Dockerfile、compose 與 Cloudflare 說明。
-- 123 項 Domain／Service／Persistence／PageModel 測試通過。
+- 138 項 Domain／Service／Persistence／PageModel 測試通過。
 
 上述代表已有自動證據，不代表 UI、實機部署或下列差距已驗收。
 
@@ -124,16 +124,26 @@ Regression tests：
 
 建議拆成兩個 PR：elimination-standings、tournament-required-playoffs。
 
-## Phase 6：併發、HTTP 與 UI 驗收
+## Phase 6：UI／UX 與完整網站流程驗收（進行中）
 
-- 使用兩個 DbContext 驗證最後名額並行報名。
-- 補完成 Round／Battle／Match 重複 POST 的 integration test。
-- 使用 WebApplicationFactory 或等效方法測 authentication、authorization、anti-forgery、route state。
-- 以瀏覽器／多帳號人工驗收私密 Lineup、polling 與手機版 UI。
+- 建立全站一致的深色視覺系統、導覽、表單、表格、狀態訊息、空狀態與觸控操作尺寸。
+- 優先改善首頁、Account、Beyblade、Quick Battle、Tournament 與 Statistics 的主要任務路徑。
+- 以瀏覽器驗收 Register、Login、Logout、Settings，以及所有登入後頁面的 GET、導覽與基本表單驗證。
+- 以桌面與手機尺寸驗收無水平溢出、導覽可操作、重要按鈕可見，狀態不只依賴顏色。
+- 再以多帳號人工驗收快速對戰及 Tournament 的私密 Lineup、Side、polling 與完成流程。
+- 補 WebApplicationFactory 或等效的 authentication、authorization、anti-forgery 與 private/public data integration tests。
 
-建議 PR：concurrency-and-web-integration-tests。
+建議 PR：responsive-ui-and-browser-acceptance。
 
-## Phase 7：部署安全與實機驗收
+## Phase 7：併發與壓力回歸（依產品決策延後）
+
+- 使用兩個獨立 DbContext 驗證最後名額並行報名。
+- 補完成 Round／Battle／Match 重複 HTTP POST 的 integration test。
+- 規劃容量、長時間 polling 與高頻寫入壓力測試；在 UI／UX 與單一使用者完整流程驗收前不阻擋目前階段。
+
+建議 PR：concurrency-and-load-regression-tests。
+
+## Phase 8：部署安全與實機驗收
 
 - 明確設定 ForwardedHeaders、可信 proxy／network 與外部 HTTPS scheme。
 - Authentication Cookie 使用 HttpOnly、適當 SameSite，外部 HTTPS 使用 Secure。

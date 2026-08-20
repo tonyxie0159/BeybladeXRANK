@@ -1,6 +1,11 @@
 @page
 @model BeybladeRecordSystem.Pages.Account.SettingsModel
 @{ ViewData["Title"] = "帳號設定"; }
-<h1>帳號設定</h1>
+<header class="page-header"><div><p class="eyebrow">ACCOUNT</p><h1>帳號設定</h1><p>更新其他玩家在對戰與賽事中看到的名稱。</p></div></header>
 @if (TempData["Success"] is string message) { <div class="alert alert-success">@message</div> }
-<form method="post" class="card card-body col-md-6"><div asp-validation-summary="ModelOnly" class="text-danger"></div><label asp-for="DisplayName" class="form-label">顯示名稱</label><input asp-for="DisplayName" class="form-control mb-3" /><button class="btn btn-primary">儲存</button></form>
+<form method="post" class="card card-body col-lg-7">
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+    <div class="mb-4"><label asp-for="DisplayName" class="form-label">顯示名稱</label><input asp-for="DisplayName" class="form-control" autocomplete="nickname" /><span asp-validation-for="DisplayName" class="text-danger small"></span><div class="form-text text-muted">修改名稱不會改變你的帳號或既有戰績歸屬。</div></div>
+    <div class="page-actions"><button class="btn btn-primary">儲存變更</button><a asp-page="/Index" class="btn btn-outline-secondary">取消</a></div>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

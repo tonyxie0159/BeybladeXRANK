@@ -1,8 +1,7 @@
 ﻿@page
 @model PrivacyModel
 @{
-    ViewData["Title"] = "Privacy Policy";
+    ViewData["Title"] = "資料與隱私";
 }
-<h1>@ViewData["Title"]</h1>
-
-<p>Use this page to detail your site's privacy policy.</p>
+<header class="page-header"><div><p class="eyebrow">PRIVACY</p><h1>@ViewData["Title"]</h1><p>本系統只使用完成帳號、對戰、賽事與戰績功能所需的資料。</p></div></header>
+<div class="card card-body"><h2 class="h5">系統會保存什麼</h2><p>帳號識別、顯示名稱、你的陀螺、對戰與賽事紀錄，以及維持登入狀態所需的 Cookie。密碼只以安全雜湊保存，不會顯示在頁面或 API 回應中。</p><h2 class="h5 mt-3">誰能看到資料</h2><p class="mb-0">私人準備流程只對相關參賽者與授權主辦方開放；已公開的賽程、比分與排名則依賽事規則顯示。若部署為公開服務，營運者應在上線前補充聯絡方式、保存期限及刪除申請流程。</p></div>

@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="~/BeybladeRecordSystem.styles.css" asp-append-version="true" />
 </head>
 <body>
+    <a class="skip-link" href="#main-content">跳到主要內容</a>
     <header class="site-header">
         <nav class="navbar navbar-expand-md navbar-dark" aria-label="主要導覽">
             <div class="container">
@@ -22,20 +23,44 @@
                         aria-controls="primaryNavigation" aria-expanded="false" aria-label="開啟導覽選單">
                     <span class="navbar-toggler-icon"></span>
                 </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                    <ul class="navbar-nav flex-grow-1">
+                <div id="primaryNavigation" class="navbar-collapse collapse justify-content-end">
+                    <ul class="navbar-nav align-items-md-center">
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">首頁</a>
+                            <a class="nav-link" asp-area="" asp-page="/Index">首頁</a>
                         </li>
-                        @if (User.Identity?.IsAuthenticated == true) { <li class="nav-item"><a class="nav-link text-dark" asp-page="/Tournaments/Index">比賽房間</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Battles/Create">快速對戰</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Battles/Invitations">對戰邀請</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Beyblades/Index">我的陀螺</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Statistics/Index">我的戰績</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Settings">帳號設定</a></li><li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Logout">登出</a></li> } else { <li class="nav-item"><a class="nav-link text-dark" asp-page="/Account/Login">登入</a></li> }
+                        @if (User.Identity?.IsAuthenticated == true)
+                        {
+                            <li class="nav-item"><a class="nav-link" asp-page="/Tournaments/Index">比賽房間</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-page="/Battles/Create">快速對戰</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-page="/Battles/Invitations">對戰中心</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-page="/Beyblades/Index">我的陀螺</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-page="/Statistics/Index">我的戰績</a></li>
+                            <li class="nav-item nav-account"><a class="nav-link" asp-page="/Account/Settings"><span class="nav-user-dot" aria-hidden="true"></span>@User.Identity.Name</a></li>
+                            <li class="nav-item"><a class="nav-link nav-logout" asp-page="/Account/Logout">登出</a></li>
+                        }
+                        else
+                        {
+                            <li class="nav-item"><a class="nav-link" asp-page="/Account/Login">登入</a></li>
+                            <li class="nav-item"><a class="btn btn-primary nav-action" asp-page="/Account/Register">建立帳號</a></li>
+                        }
                     </ul>
                 </div>
             </div>
         </nav>
     </header>
-    <main role="main" class="@(ViewData["FullBleed"] as bool? == true ? "" : "container py-4")">
+    <main id="main-content" role="main" tabindex="-1" class="@(ViewData["FullBleed"] as bool? == true ? "" : "container content-shell")">
         @RenderBody()
     </main>
+
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <nav class="mobile-dock" aria-label="手機快速導覽">
+            <a asp-page="/Index"><span aria-hidden="true">⌂</span><small>首頁</small></a>
+            <a asp-page="/Battles/Invitations"><span aria-hidden="true">⚔</span><small>對戰</small></a>
+            <a asp-page="/Tournaments/Index"><span aria-hidden="true">◆</span><small>賽事</small></a>
+            <a asp-page="/Statistics/Index"><span aria-hidden="true">▥</span><small>戰績</small></a>
+        </nav>
+    }
 
     <footer class="site-footer">
         <div class="container d-flex flex-column flex-sm-row justify-content-between gap-2">
