@@ -5,13 +5,13 @@
 - [x]：目前已有對應自動測試，且最近一次完整測試通過。
 - [ ]：有效需求仍待實作、補自動測試或完成指定人工驗收。
 
-最近一次基準（2026-08-20）：
+最近一次基準（2026-08-22）：
 
 ```powershell
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：146 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel／HTTP，但不能代替完整瀏覽器、手機或實際部署驗收。
+結果：147 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel／HTTP，但不能代替完整瀏覽器、手機或實際部署驗收。
 
 ## 已有自動證據
 
@@ -21,6 +21,7 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [x] Beyblade CRUD 限制在擁有者，Delete 採軟刪除。
 - [x] 同一 User 名稱不可重複，不同 User 可同名。
 - [x] Rename 維持同一 BeybladeId，Lineup／Round 保存 Snapshot。
+- [x] HTTP test fixture 將 SQLite 與 Data Protection keys 隔離到每次執行的暫存目錄，結束後完整清理。
 
 ### 快速邀請與 Lineup
 
