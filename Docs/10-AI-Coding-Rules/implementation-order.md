@@ -20,7 +20,7 @@
 ## Step 2：Tournament 報名生命週期
 
 1. [已完成] 主辦方 Tournament participant invitation。
-2. [已完成] 接受／拒絕、容量保護與唯一 Entry；最後名額的雙 DbContext 壓力測試延後至 Step 7。
+2. [已完成] 接受／拒絕、容量保護與唯一 Entry；最後名額的雙 DbContext 壓力測試已於 Step 7 完成。
 3. [已完成] 個人、整隊、系統配隊一致的 ReopenRegistration。
 
 ## Step 3：No-show 與 WaitingForMe
@@ -49,13 +49,11 @@
 - 多帳號驗收 Quick Battle、Tournament 私密資料、Side、polling 與完成流程。
 - Authentication、authorization、anti-forgery、private/public data integration tests。
 
-## Step 7：併發與壓力測試（延後）
+## Step 7：併發與壓力測試（已完成）
 
-- 兩個 DbContext 的最後名額競爭。
-- 重複 POST 不重複計分／推進。
-- 容量、polling 與高頻寫入壓力測試。
-
-此步驟不阻擋 Step 6 的 UI／UX 與完整單一使用者網站流程驗收。
+- [已完成] 兩個獨立 DbContext 的最後名額競爭，只允許一個成功。
+- [已完成] Round／Tournament Battle／Match 重複 HTTP POST 不重複計分、建立 Round、推進或通知。
+- [已完成] 所有賽制容量上限、List／Details／Match polling 與高頻 Battle event 寫入壓力測試。
 
 ## Step 8：部署安全與實測
 

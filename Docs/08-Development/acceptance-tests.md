@@ -11,7 +11,7 @@
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：155 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel／HTTP，但不能代替完整瀏覽器、手機或實際部署驗收。
+結果：161 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel／HTTP／Concurrency／Load，但不能代替完整瀏覽器、手機或實際部署驗收。
 
 ## 已有自動證據
 
@@ -107,13 +107,14 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [x] 建立 Razor Pages authentication／authorization／anti-forgery integration tests。
 - [ ] 建立私密 Lineup 不外洩及公開 Tournament read model 的 integration tests。
 
-### 已延後的併發與壓力證據
+### 已完成的併發與壓力證據
 
-- [ ] 使用兩個獨立 DbContext 模擬最後名額並行報名，只允許一個成功。
-- [ ] 對完成 Round／Battle／Match 的重複 HTTP POST 驗證不重複計分、晉級或通知。
-- [ ] 容量、長時間 polling 與高頻寫入壓力測試。
-
-以上項目依目前產品優先順序延後，不阻擋 UI／UX 與一般使用者功能驗收。
+- [x] 使用檔案型 SQLite 與兩個獨立 DbContext 模擬最後名額並行報名，只允許一個成功；競態測試連續執行 10 次通過。
+- [x] 對完成 Round 的重複 HTTP POST 驗證不重複計分或建立額外 Round。
+- [x] 對完成 Tournament Battle／Match 的重複 HTTP POST 驗證只完成一次、只推進一次，且下一場只建立一組兩人的通知資料。
+- [x] 容量上限涵蓋單淘汰 512、雙敗 256、單循環 32 與瑞士 512。
+- [x] List／Details／Match Poll endpoints 共 90 次連續請求回傳穩定 token，且 Tournament／Match version、時間及參與者資料不變。
+- [x] 16 場進行中 Battle 共 96 次 LaunchFault 寫入，精確保存 96 個 Fault 與 48 個 Penalty，不遺失、不重複且比分一致。
 
 ## 人工與部署驗收
 

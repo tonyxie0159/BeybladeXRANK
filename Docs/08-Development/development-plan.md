@@ -13,7 +13,7 @@
 - Tournament 出賽、Lineup、推進、取消、Void／Reopen 與下游保護。
 - 來源分區、B／X Side、個人／陀螺／對手／歷史統計。
 - runtime data directory、Dockerfile、compose 與 Cloudflare 說明。
-- 155 項 Domain／Service／Persistence／PageModel／HTTP 測試通過。
+- 161 項 Domain／Service／Persistence／PageModel／HTTP／Concurrency／Load 測試通過。
 
 上述代表已有自動證據，不代表 UI、實機部署或下列差距已驗收。
 
@@ -135,11 +135,13 @@ Regression tests：
 
 建議 PR：responsive-ui-and-browser-acceptance。
 
-## Phase 7：併發與壓力回歸（依產品決策延後）
+## Phase 7：併發與壓力回歸（已完成）
 
-- 使用兩個獨立 DbContext 驗證最後名額並行報名。
-- 補完成 Round／Battle／Match 重複 HTTP POST 的 integration test。
-- 規劃容量、長時間 polling 與高頻寫入壓力測試；在 UI／UX 與單一使用者完整流程驗收前不阻擋目前階段。
+完成證據：檔案型 SQLite 的兩個獨立 DbContext 最後名額競爭連續 10 次通過；Round Complete 與 Tournament Battle／Match Finish 的重複 HTTP POST 不重複計分、建立 Round、推進或通知；所有賽制上限、90 次 Poll endpoint 請求及 96 次高頻事件寫入均已驗證。
+
+- [已完成] 使用兩個獨立 DbContext 驗證最後名額並行報名，只允許一個成功並正確進入 CapacityReached。
+- [已完成] 完成 Round／Battle／Match 的重複 HTTP POST integration test。
+- [已完成] 單淘汰 512、雙敗 256、單循環 32、瑞士 512 的容量測試，以及 polling 與高頻寫入壓力回歸。
 
 建議 PR：concurrency-and-load-regression-tests。
 
