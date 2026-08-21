@@ -14,7 +14,13 @@ public class LoginModel(AuthService authService) : PageModel
     public async Task<IActionResult> OnPostAsync()
     {
         var user = await authService.LoginAsync(Account, Password);
-        if (user is null) { ModelState.AddModelError(string.Empty, "帳號或密碼錯誤。"); return Page(); }
+        if (user is null)
+        {
+            ModelState.AddModelError(string.Empty, "帳號或密碼錯誤。");
+            ModelState.Remove(nameof(Password));
+            Password = string.Empty;
+            return Page();
+        }
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Name, user.DisplayName)], CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
         return LocalRedirect(Url.Content("~/"));

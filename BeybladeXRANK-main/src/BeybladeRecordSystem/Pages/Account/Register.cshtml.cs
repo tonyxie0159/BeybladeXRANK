@@ -12,7 +12,13 @@ public class RegisterModel(AuthService authService) : PageModel
     public async Task<IActionResult> OnPostAsync()
     {
         var result = await authService.RegisterAsync(Account, Password, DisplayName);
-        if (!result.Succeeded) { ModelState.AddModelError(string.Empty, result.Error!); return Page(); }
+        if (!result.Succeeded)
+        {
+            ModelState.AddModelError(string.Empty, result.Error!);
+            ModelState.Remove(nameof(Password));
+            Password = string.Empty;
+            return Page();
+        }
         TempData["Success"] = "帳號已建立，請登入。";
         return RedirectToPage("/Account/Login");
     }
