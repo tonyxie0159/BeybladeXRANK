@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 
 namespace BeybladeRecordSystem.Tests;
 
@@ -10,15 +9,13 @@ public sealed class AccountWebApplicationFactory : WebApplicationFactory<Program
         Path.GetTempPath(),
         $"beybladexrank-web-{Guid.NewGuid():N}");
 
+    public string DataDirectory => dataDirectory;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>
-            {
-                ["RuntimeDataDirectory"] = dataDirectory,
-                ["ConnectionStrings:DefaultConnection"] = "Data Source=web-tests.db;Pooling=False"
-            }));
+        builder.UseSetting("RuntimeDataDirectory", dataDirectory);
+        builder.UseSetting("ConnectionStrings:DefaultConnection", "Data Source=web-tests.db;Pooling=False");
     }
 
     public Task InitializeAsync() => Task.CompletedTask;

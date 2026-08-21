@@ -28,6 +28,25 @@ public sealed partial class AccountWebTests : IClassFixture<AccountWebApplicatio
     }
 
     [Fact]
+    public async Task RuntimeData_IsIsolatedInsideFactoryTemporaryDirectory()
+    {
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/Account/Login");
+        response.EnsureSuccessStatusCode();
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var expectedDatabasePath = Path.GetFullPath(
+            Path.Combine(factory.DataDirectory, "web-tests.db"));
+        var actualDatabasePath = Path.GetFullPath(db.Database.GetDbConnection().DataSource);
+        Assert.Equal(expectedDatabasePath, actualDatabasePath);
+
+        var keyDirectory = Path.Combine(factory.DataDirectory, "keys");
+        Assert.NotEmpty(Directory.GetFiles(keyDirectory, "key-*.xml"));
+    }
+
+    [Fact]
     public async Task MobileNavigationToggle_ProvidesLabelsForCollapsedAndExpandedStates()
     {
         using var client = factory.CreateClient();
