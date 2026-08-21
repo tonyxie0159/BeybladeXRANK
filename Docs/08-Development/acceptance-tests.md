@@ -11,7 +11,7 @@
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：147 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel／HTTP，但不能代替完整瀏覽器、手機或實際部署驗收。
+結果：155 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel／HTTP，但不能代替完整瀏覽器、手機或實際部署驗收。
 
 ## 已有自動證據
 
@@ -104,7 +104,7 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [ ] Register、Login、Logout、Settings 以瀏覽器完整操作。
 - [ ] 所有登入後主要頁面以桌面與手機尺寸通過導覽、可讀性、基本表單與水平溢出檢查。
 - [ ] 快速對戰與 Tournament 以多帳號完成主要流程。
-- [ ] 建立 Razor Pages authentication／authorization／anti-forgery integration tests。
+- [x] 建立 Razor Pages authentication／authorization／anti-forgery integration tests。
 - [ ] 建立私密 Lineup 不外洩及公開 Tournament read model 的 integration tests。
 
 ### 已延後的併發與壓力證據

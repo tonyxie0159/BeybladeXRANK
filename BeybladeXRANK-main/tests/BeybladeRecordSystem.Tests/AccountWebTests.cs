@@ -13,18 +13,99 @@ public sealed partial class AccountWebTests : IClassFixture<AccountWebApplicatio
 
     public AccountWebTests(AccountWebApplicationFactory factory) => this.factory = factory;
 
-    [Fact]
-    public async Task ProtectedPage_RedirectsAnonymousUserToLogin()
+    [Theory]
+    [InlineData("/Account/Settings")]
+    [InlineData("/Battles/Create")]
+    [InlineData("/Battles/Invitations")]
+    [InlineData("/Beyblades")]
+    [InlineData("/Beyblades/Create")]
+    [InlineData("/Statistics")]
+    [InlineData("/Tournaments")]
+    [InlineData("/Tournaments/Create")]
+    public async Task ProtectedPages_RedirectAnonymousUserToLogin(string path)
     {
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
 
-        using var response = await client.GetAsync("/Beyblades");
+        using var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         AssertRedirectPath(response, "/Account/Login");
+    }
+
+    [Fact]
+    public async Task BeybladeMutations_RequireAntiforgeryAndPreserveOwnership()
+    {
+        using var ownerClient = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        using var otherClient = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        var suffix = Guid.NewGuid().ToString("N");
+        var ownerAccount = $"blade-owner-{suffix}";
+        var otherAccount = $"blade-other-{suffix}";
+        const string password = "beyblade ownership password";
+        const string originalName = "Owner Blade";
+        const string rejectedName = "Missing Token Blade";
+        const string attackerName = "Attacker Rename";
+
+        await RegisterAsync(ownerClient, ownerAccount, password, "Blade Owner");
+        await LoginAsync(ownerClient, ownerAccount, password);
+        await RegisterAsync(otherClient, otherAccount, password, "Other Blade User");
+        await LoginAsync(otherClient, otherAccount, password);
+
+        using var missingTokenResponse = await ownerClient.PostAsync("/Beyblades/Create", Form(
+            ("Name", rejectedName)));
+        Assert.Equal(HttpStatusCode.BadRequest, missingTokenResponse.StatusCode);
+
+        var createToken = await GetAntiforgeryTokenAsync(ownerClient, "/Beyblades/Create");
+        using var createResponse = await ownerClient.PostAsync("/Beyblades/Create", Form(
+            ("__RequestVerificationToken", createToken),
+            ("Name", originalName)));
+        Assert.Equal(HttpStatusCode.Redirect, createResponse.StatusCode);
+        Assert.Equal("/Beyblades", createResponse.Headers.Location?.OriginalString);
+
+        int ownerBladeId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = await db.Users.SingleAsync(x => x.Account == ownerAccount);
+            Assert.False(await db.Beyblades.AnyAsync(x => x.UserId == owner.Id && x.Name == rejectedName));
+            ownerBladeId = (await db.Beyblades.SingleAsync(
+                x => x.UserId == owner.Id && x.Name == originalName)).Id;
+        }
+
+        using var otherGetResponse = await otherClient.GetAsync($"/Beyblades/Edit/{ownerBladeId}");
+        Assert.Equal(HttpStatusCode.NotFound, otherGetResponse.StatusCode);
+
+        var otherToken = await GetAntiforgeryTokenAsync(otherClient, "/Beyblades/Create");
+        using var renameResponse = await otherClient.PostAsync($"/Beyblades/Edit/{ownerBladeId}", Form(
+            ("__RequestVerificationToken", otherToken),
+            ("Id", ownerBladeId.ToString()),
+            ("Name", attackerName)));
+        Assert.Equal(HttpStatusCode.OK, renameResponse.StatusCode);
+
+        using var deleteResponse = await otherClient.PostAsync("/Beyblades?handler=Delete", Form(
+            ("__RequestVerificationToken", otherToken),
+            ("id", ownerBladeId.ToString())));
+        Assert.Equal(HttpStatusCode.Redirect, deleteResponse.StatusCode);
+        Assert.Equal("/Beyblades", deleteResponse.Headers.Location?.OriginalString);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var ownerBlade = await db.Beyblades.SingleAsync(x => x.Id == ownerBladeId);
+            Assert.Equal(originalName, ownerBlade.Name);
+            Assert.False(ownerBlade.IsDeleted);
+            Assert.DoesNotContain(await db.Beyblades.ToListAsync(), x => x.Name == attackerName);
+        }
     }
 
     [Fact]
