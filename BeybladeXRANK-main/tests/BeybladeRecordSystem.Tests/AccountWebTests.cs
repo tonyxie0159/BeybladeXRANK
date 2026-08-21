@@ -28,6 +28,26 @@ public sealed partial class AccountWebTests : IClassFixture<AccountWebApplicatio
     }
 
     [Fact]
+    public async Task MobileNavigationToggle_ProvidesLabelsForCollapsedAndExpandedStates()
+    {
+        using var client = factory.CreateClient();
+
+        using var pageResponse = await client.GetAsync("/");
+        pageResponse.EnsureSuccessStatusCode();
+        var html = await pageResponse.Content.ReadAsStringAsync();
+        Assert.Contains("data-collapsed-label=\"開啟導覽選單\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-expanded-label=\"關閉導覽選單\"", html, StringComparison.Ordinal);
+        Assert.Contains("aria-expanded=\"false\" aria-label=\"開啟導覽選單\"", html, StringComparison.Ordinal);
+
+        using var scriptResponse = await client.GetAsync("/js/site.js");
+        scriptResponse.EnsureSuccessStatusCode();
+        var script = await scriptResponse.Content.ReadAsStringAsync();
+        Assert.Contains("show.bs.collapse", script, StringComparison.Ordinal);
+        Assert.Contains("hide.bs.collapse", script, StringComparison.Ordinal);
+        Assert.Contains("updateNavigationToggleLabel", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AccountLifecycle_UsesAntiforgeryAndPreservesUserOwnership()
     {
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions

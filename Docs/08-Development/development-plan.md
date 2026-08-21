@@ -13,7 +13,7 @@
 - Tournament 出賽、Lineup、推進、取消、Void／Reopen 與下游保護。
 - 來源分區、B／X Side、個人／陀螺／對手／歷史統計。
 - runtime data directory、Dockerfile、compose 與 Cloudflare 說明。
-- 138 項 Domain／Service／Persistence／PageModel 測試通過。
+- 146 項 Domain／Service／Persistence／PageModel／HTTP 測試通過。
 
 上述代表已有自動證據，不代表 UI、實機部署或下列差距已驗收。
 
