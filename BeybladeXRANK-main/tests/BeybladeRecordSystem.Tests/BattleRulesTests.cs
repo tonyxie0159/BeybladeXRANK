@@ -83,7 +83,7 @@ public class BattleRulesTests
     }
 
     [Fact]
-    public async Task RevisionReplay_InvalidatesEventsAfterFirstThreshold_AndCanReactivateThem()
+    public async Task RevisionOfEarlierRound_InvalidatesAllLaterRounds_AndRestartsAtNextPosition()
     {
         await using var setup = await TestBattle.CreateAsync();
         var roundIds = new List<int>();
@@ -118,13 +118,14 @@ public class BattleRulesTests
         var battle = await setup.Db.Battles.SingleAsync(x => x.Id == setup.BattleId);
         var rounds = await setup.Db.BattleRounds.Include(x => x.Events)
             .Where(x => x.BattleId == setup.BattleId).OrderBy(x => x.RoundNo).ToListAsync();
-        Assert.Equal(BattleStatus.VictoryPendingCompletion, battle.Status);
-        Assert.Equal(4, battle.SideAScore);
+        Assert.Equal(BattleStatus.InProgress, battle.Status);
+        Assert.Equal(3, battle.SideAScore);
         Assert.Equal(0, battle.SideBScore);
         Assert.Contains(rounds[0].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.SupersededByRevision);
         Assert.Contains(rounds[0].Events, x => x.IsEffective && x.ResultType == ResultType.Extreme);
-        Assert.Contains(rounds[2].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.VictoryThresholdReached);
-        Assert.Contains(rounds[3].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.VictoryThresholdReached);
+        Assert.Contains(rounds[2].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.SupersededByEarlierRoundRevision);
+        Assert.Contains(rounds[3].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.SupersededByEarlierRoundRevision);
+        Assert.Contains(rounds, x => x.RoundNo > 4 && x.PositionNo == 2 && x.Status == BattleRoundStatus.InProgress);
 
         Assert.True((await setup.Service.ReviseRoundAsync(
             setup.BattleId, roundIds[0], setup.PlayerAId, setup.PlayerAId,
@@ -135,10 +136,11 @@ public class BattleRulesTests
         rounds = await setup.Db.BattleRounds.Include(x => x.Events)
             .Where(x => x.BattleId == setup.BattleId).OrderBy(x => x.RoundNo).ToListAsync();
         Assert.Equal(BattleStatus.InProgress, battle.Status);
-        Assert.Equal(3, battle.SideAScore);
-        Assert.Equal(1, battle.SideBScore);
-        Assert.Contains(rounds[2].Events, x => x.IsEffective && x.InvalidationReason is null);
-        Assert.Contains(rounds[3].Events, x => x.IsEffective && x.InvalidationReason is null);
+        Assert.Equal(1, battle.SideAScore);
+        Assert.Equal(0, battle.SideBScore);
+        Assert.Contains(rounds[2].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.SupersededByEarlierRoundRevision);
+        Assert.Contains(rounds[3].Events, x => !x.IsEffective && x.InvalidationReason == BattleRoundEventInvalidationReason.SupersededByEarlierRoundRevision);
+        Assert.Single(rounds, x => x.Status == BattleRoundStatus.InProgress && x.PositionNo == 2);
         var revisions = await setup.Db.BattleRoundRevisions
             .Where(x => x.BattleRoundId == roundIds[0]).OrderBy(x => x.Id).ToListAsync();
         Assert.Equal(2, revisions.Count);
@@ -147,6 +149,24 @@ public class BattleRulesTests
             Assert.NotEmpty(x.PreviousBattleSnapshot);
             Assert.NotEmpty(x.NewBattleSnapshot);
         });
+    }
+
+    [Fact]
+    public async Task RecordAndCompleteRound_RecordsResultAndCreatesNextRoundAtomically()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+
+        var result = await setup.Service.RecordAndCompleteRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId, setup.PlayerAId, ResultType.SpinFinish);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.Value);
+        var rounds = await setup.Db.BattleRounds.Include(x => x.Events)
+            .Where(x => x.BattleId == setup.BattleId).OrderBy(x => x.RoundNo).ToListAsync();
+        Assert.Equal(BattleRoundStatus.Completed, rounds[0].Status);
+        Assert.Single(rounds[0].Events, x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult);
+        Assert.Equal(BattleRoundStatus.InProgress, rounds[1].Status);
+        Assert.Equal(2, rounds[1].PositionNo);
     }
 
     [Fact]

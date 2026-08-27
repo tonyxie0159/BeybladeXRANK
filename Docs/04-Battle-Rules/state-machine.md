@@ -50,8 +50,8 @@ LineupSelection
 
 授權裁判可：
 
-- 記錄 LaunchFault／BattleResult。
-- 完成具有有效 BattleResult 的 Round。
+- 記錄 LaunchFault。
+- 以單一交易記錄 BattleResult、完成 Round、重新計分並在合法時建立下一 Round。
 - 在目前 Sequence 全部 Position 完成且雙方未達 ScoreToWin 時進入 ReorderSelection。
 - 執行快速棄權或進入 Tournament 對局棄權流程。
 

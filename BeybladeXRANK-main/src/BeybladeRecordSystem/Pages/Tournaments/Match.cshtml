@@ -1,10 +1,11 @@
 @page "{id:int}"
 @model BeybladeRecordSystem.Pages.Tournaments.MatchModel
 @using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Services
 @{ var match = Model.Workspace.Match; ViewData["Title"] = $"對局 #{match.SequenceNumber}"; }
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div><h1>對局 #@match.SequenceNumber</h1><p class="text-muted mb-0">@match.SideAEntry!.DisplayNameSnapshot vs @match.SideBEntry!.DisplayNameSnapshot</p></div>
-    <div class="text-end"><span class="badge text-bg-primary">@match.Status</span><div><a asp-page="Match" asp-route-id="@match.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div></div>
+    <div class="text-end"><span class="badge @TournamentDisplay.BadgeClass(match.Status)">@TournamentDisplay.Label(match.Status)</span><div><a asp-page="Match" asp-route-id="@match.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div></div>
 </div>
 @if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
 @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
@@ -16,7 +17,7 @@
     var noShowReason = wasNoShow && match.ResolutionReason?.StartsWith("NoShow: ") == true
         ? match.ResolutionReason[8..]
         : null;
-    <div class="alert alert-warning">本場以 Walkover 結束。勝方：@match.WinnerEntry?.DisplayNameSnapshot。
+    <div class="alert alert-warning">本場以不戰勝結束。勝方：@match.WinnerEntry?.DisplayNameSnapshot。
         @if (wasNoShow) { <span>敗方由主辦方判定未到。</span> }
         else { <span>敗方拒絕出賽。</span> }
         @if (!string.IsNullOrWhiteSpace(noShowReason)) { <span>原因：@noShowReason</span> }
@@ -37,7 +38,7 @@
     {
         var entryParticipants = match.Participants.Where(x => x.TournamentEntryId == entry.Id).OrderBy(x => x.User.DisplayName).ToList();
         <div class="col-md-6"><div class="border rounded p-2 h-100"><strong>@entry.DisplayNameSnapshot</strong><ul class="mb-0">
-        @foreach (var participant in entryParticipants) { <li>@participant.User.DisplayName：@participant.Status</li> }
+        @foreach (var participant in entryParticipants) { <li>@participant.User.DisplayName：@TournamentDisplay.Label(participant.Status)</li> }
         </ul></div></div>
     }
     </div>
@@ -127,7 +128,7 @@
         @if (Model.Workspace.CurrentPrivateSelections.Count == match.Tournament.BeybladesPerPlayer)
         { <p class="text-success">你的陀螺順序已提交。</p> }
         else
-        { <form method="post" asp-page-handler="SubmitReorder" class="mb-3">@for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++) { <label class="form-label">新順位 @(i + 1)</label><select name="BladeIds" class="form-select mb-2" required><option value="">請選擇</option>@foreach (var blade in originals) { <option value="@blade.BeybladeId">@blade.BeybladeNameSnapshot</option> }</select> }<button class="btn btn-primary">密封提交陀螺重排</button></form> }
+        { <form method="post" asp-page-handler="SubmitReorder" class="mb-3">@for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++) { <label class="form-label">新順位 @(i + 1)</label><select name="BladeIds" class="form-select mb-2" required>@foreach (var blade in originals) { <option value="@blade.BeybladeId" selected="@(blade.PositionNo == i + 1)">@blade.BeybladeNameSnapshot</option> }</select> }<button class="btn btn-primary">密封提交陀螺重排</button></form> }
         @if (match.Tournament.Mode == TournamentMode.Team && Model.Workspace.CurrentParticipant.IsMatchRepresentative)
         {
             var team = match.Participants.Where(x => x.TournamentEntryId == Model.Workspace.CurrentParticipant.TournamentEntryId).OrderBy(x => x.User.DisplayName).ToList();
@@ -175,7 +176,7 @@
             const payload = await response.json();
             if (payload.token && payload.token !== initialToken) window.location.reload();
         } catch { }
-    }, 10000);
+    }, 60000);
 })();
 </script>
 }

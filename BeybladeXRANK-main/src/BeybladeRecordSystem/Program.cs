@@ -1,5 +1,6 @@
 using BeybladeRecordSystem.Data;
 using BeybladeRecordSystem.Infrastructure;
+using BeybladeRecordSystem.Realtime;
 using BeybladeRecordSystem.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -10,7 +11,8 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
 // Add services to the container.
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages().AddMvcOptions(options => options.Filters.Add<TournamentRealtimePageFilter>());
+builder.Services.AddSignalR();
 var dataDirectory = RuntimeStorage.ResolveDataDirectory(
     builder.Environment.ContentRootPath,
     builder.Configuration["RuntimeDataDirectory"]);
@@ -32,6 +34,9 @@ builder.Services.AddScoped<TournamentService>();
 builder.Services.AddScoped<TournamentMatchService>();
 builder.Services.AddScoped<TournamentProgressionService>();
 builder.Services.AddScoped<TournamentStandingsService>();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddSingleton<IRealtimePublisher, RealtimePublisher>();
+builder.Services.AddScoped<TournamentRealtimePageFilter>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -62,6 +67,7 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapRazorPages()
    .WithStaticAssets();
+app.MapHub<RealtimeHub>("/hubs/realtime");
 
 using (var scope = app.Services.CreateScope())
 {
@@ -70,3 +76,5 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+public partial class Program { }

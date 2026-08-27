@@ -22,10 +22,25 @@
         wrapper.append(table);
     });
 
+    const restoreSubmissionState = form => {
+        delete form.dataset.submitting;
+        form.querySelectorAll("button[data-submit-lock='true']").forEach(button => {
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+            button.innerHTML = button.dataset.originalContent || button.innerHTML;
+            delete button.dataset.originalContent;
+            delete button.dataset.submitLock;
+        });
+    };
+
     document.querySelectorAll("form[method='post']").forEach(form => {
+        form.addEventListener("invalid", () => restoreSubmissionState(form), true);
         form.addEventListener("submit", event => {
-            if (event.defaultPrevented || !form.checkValidity() || form.dataset.submitting === "true") {
+            const jqueryForm = window.jQuery ? window.jQuery(form) : null;
+            const unobtrusiveValidationFailed = jqueryForm?.data("validator") && !jqueryForm.valid();
+            if (event.defaultPrevented || !form.checkValidity() || unobtrusiveValidationFailed || form.dataset.submitting === "true") {
                 if (form.dataset.submitting === "true") event.preventDefault();
+                else restoreSubmissionState(form);
                 return;
             }
 
@@ -33,12 +48,23 @@
             const submitter = event.submitter;
             if (submitter instanceof HTMLButtonElement) {
                 window.requestAnimationFrame(() => {
+                    if (event.defaultPrevented) {
+                        restoreSubmissionState(form);
+                        return;
+                    }
+
+                    submitter.dataset.originalContent = submitter.innerHTML;
+                    submitter.dataset.submitLock = "true";
                     submitter.disabled = true;
                     submitter.setAttribute("aria-busy", "true");
                     submitter.textContent = "處理中…";
                 });
             }
         });
+    });
+
+    window.addEventListener("pageshow", () => {
+        document.querySelectorAll("form[data-submitting='true']").forEach(restoreSubmissionState);
     });
 
     document.querySelectorAll("#primaryNavigation .nav-link").forEach(link => {

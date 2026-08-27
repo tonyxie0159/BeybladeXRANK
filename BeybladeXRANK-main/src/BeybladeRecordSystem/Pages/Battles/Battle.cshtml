@@ -3,64 +3,149 @@
 @using BeybladeRecordSystem.Domain.Enums
 @{
     ViewData["Title"] = "對戰裁判";
-    var sideAClass = Model.Battle.SideADesignation == BattleSide.B ? "side-b" : "side-x";
-    var sideBClass = Model.Battle.SideADesignation == BattleSide.B ? "side-x" : "side-b";
 }
-<div class="sticky-top scoreboard" aria-label="目前比分">
-    <div class="row text-center align-items-center g-2">
-        <div class="col battle-score @sideAClass"><strong>@Model.SideALabel</strong><div class="display-4">@Model.Battle.PlayerAScore</div></div>
-        <div class="col-auto score-divider"><small>目標 @Model.Battle.ScoreToWin 分</small><strong>VS</strong></div>
-        <div class="col battle-score @sideBClass"><strong>@Model.SideBLabel</strong><div class="display-4">@Model.Battle.PlayerBScore</div></div>
+
+<section class="scoreboard battle-scoreboard" aria-label="目前比分">
+    <div class="score-side side-b">
+        <span class="side-name">B Side</span>
+        <strong>@Model.BPlayerName</strong>
+        <span class="score-value">@Model.BScore</span>
+        <small>失誤：@Model.BFaults</small>
     </div>
-</div>
+    <div class="score-divider"><small>目標 @Model.Battle.ScoreToWin 分</small><strong>VS</strong></div>
+    <div class="score-side side-x">
+        <span class="side-name">X Side</span>
+        <strong>@Model.XPlayerName</strong>
+        <span class="score-value">@Model.XScore</span>
+        <small>失誤：@Model.XFaults</small>
+    </div>
+</section>
+
 @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
-@if (Model.Battle.Status == BattleStatus.VictoryPendingCompletion) { <div class="alert alert-warning"><strong>已達勝利條件</strong>，請確認紀錄後按「對戰結束」。</div>@if (Model.CanOperate) { <form method="post" asp-page-handler="Finish"><input type="hidden" name="id" value="@Model.Battle.Id" /><button class="btn btn-danger btn-lg w-100">對戰結束</button></form> } }
-@if (Model.Battle.Status == BattleStatus.Completed) { <div class="alert alert-success">對戰已完成。</div> }
-@if (Model.Battle.Status == BattleStatus.Forfeited) { <div class="alert alert-warning">對戰已因棄權結束；已完成回合仍列入統計。</div> }
-@if (Model.Battle.Status == BattleStatus.Cancelled) { <div class="alert alert-secondary">對戰已隨賽事取消；未完成回合不列入統計。</div> }
-@if (Model.Battle.Status == BattleStatus.Voided) { <div class="alert alert-dark"><strong>此 Battle 已撤銷且不列入任何正式統計。</strong>@if (!string.IsNullOrWhiteSpace(Model.Battle.VoidReason)) { <span> 原因：@Model.Battle.VoidReason</span> }@if (Model.Battle.VoidedAtUtc is not null) { <div class="small mt-1">撤銷時間：@Model.Battle.VoidedAtUtc.Value.ToLocalTime()；操作者：@(Model.Battle.VoidedByUser?.DisplayName ?? "未知")</div> }</div> }
-<div class="d-flex gap-2 mb-3">@if (Model.CanOperate && Model.Battle.Status is BattleStatus.InProgress or BattleStatus.ReorderSelection or BattleStatus.VictoryPendingCompletion or BattleStatus.Completed) { <a asp-page="Revise" asp-route-id="@Model.Battle.Id" class="btn btn-outline-secondary">Round 判決修改</a> }@if (Model.CanReorder) { <a asp-page="Reorder" asp-route-id="@Model.Battle.Id" class="btn btn-outline-primary">密封重新排列</a> }</div>
+
+@if (Model.Battle.Status == BattleStatus.VictoryPendingCompletion)
+{
+    <div class="alert alert-warning"><strong>已達勝利條件</strong>，請確認比分後結束對戰。</div>
+    @if (Model.CanOperate)
+    {
+        <form method="post" asp-page-handler="Finish" class="mb-3">
+            <input type="hidden" name="id" value="@Model.Battle.Id" />
+            <button class="btn btn-danger btn-lg w-100">確認結束對戰</button>
+        </form>
+    }
+}
+else if (Model.Battle.Status == BattleStatus.Completed)
+{
+    <div class="alert alert-success">對戰已完成。</div>
+    <div class="page-actions mb-3"><a asp-page="/Index" class="btn btn-primary">回到首頁</a></div>
+}
+else if (Model.Battle.Status == BattleStatus.Forfeited)
+{
+    <div class="alert alert-warning">對戰已因棄權結束；已完成回合仍列入統計。</div>
+    <a asp-page="/Index" class="btn btn-primary mb-3">回到首頁</a>
+}
+else if (Model.Battle.Status == BattleStatus.Cancelled)
+{
+    <div class="alert alert-secondary">對戰已隨賽事取消；未完成回合不列入統計。</div>
+}
+else if (Model.Battle.Status == BattleStatus.Voided)
+{
+    <div class="alert alert-dark"><strong>此對戰已撤銷且不列入正式統計。</strong>@if (!string.IsNullOrWhiteSpace(Model.Battle.VoidReason)) { <span> 原因：@Model.Battle.VoidReason</span> }</div>
+}
+
+@if (Model.CurrentRound is not null)
+{
+    <section class="card card-body current-round mb-3">
+        <p class="eyebrow"><span></span>CURRENT ROUND</p>
+        <h1 class="current-matchup">
+            Round @Model.CurrentRound.RoundNo：<span class="text-side-b">@Model.BBeybladeName</span>
+            <small>vs</small>
+            <span class="text-side-x">@Model.XBeybladeName</span>
+        </h1>
+
+        @if (Model.CanOperate && Model.Battle.Status == BattleStatus.InProgress)
+        {
+            <div class="row g-2 mb-4">
+                <div class="col-6">
+                    <form method="post" asp-page-handler="Fault">
+                        <input type="hidden" name="id" value="@Model.Battle.Id" />
+                        <input type="hidden" name="playerId" value="@Model.BPlayerId" />
+                        <button class="btn btn-outline-primary w-100">B Side 發射失誤</button>
+                    </form>
+                </div>
+                <div class="col-6">
+                    <form method="post" asp-page-handler="Fault">
+                        <input type="hidden" name="id" value="@Model.Battle.Id" />
+                        <input type="hidden" name="playerId" value="@Model.XPlayerId" />
+                        <button class="btn btn-outline-danger w-100">X Side 發射失誤</button>
+                    </form>
+                </div>
+            </div>
+
+            <h2 class="h5">對局判決</h2>
+            <p class="text-muted small">點選勝方的勝利方式後，系統會立即完成本局並進入下一局。</p>
+            <div class="judgement-grid">
+                @foreach (var side in new[] { (Label: "B Side", PlayerId: Model.BPlayerId, Css: "side-b"), (Label: "X Side", PlayerId: Model.XPlayerId, Css: "side-x") })
+                {
+                    <div class="judgement-side @side.Css">
+                        <strong>@side.Label</strong>
+                        @foreach (var type in Enum.GetValues<ResultType>())
+                        {
+                            <form method="post" asp-page-handler="Result">
+                                <input type="hidden" name="id" value="@Model.Battle.Id" />
+                                <input type="hidden" name="winnerPlayerId" value="@side.PlayerId" />
+                                <input type="hidden" name="resultType" value="@type" />
+                                <button class="btn btn-primary w-100">@(type switch { ResultType.SpinFinish => "轉停 +1", ResultType.KnockOut => "擊飛 +2", ResultType.Burst => "爆裂 +2", _ => "極限 +3" })</button>
+                            </form>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+}
+
+<div class="battle-management mb-3">
+    <a asp-page="History" asp-route-id="@Model.Battle.Id" class="btn btn-outline-secondary">對戰紀錄</a>
+    @if (Model.CanOperate && Model.Battle.Status is BattleStatus.InProgress or BattleStatus.ReorderSelection or BattleStatus.VictoryPendingCompletion or BattleStatus.Completed)
+    {
+        <a asp-page="Revise" asp-route-id="@Model.Battle.Id" class="btn btn-outline-warning">判決修改</a>
+    }
+    @if (Model.CanTerminateQuick || Model.CanCancelQuick)
+    {
+        <button class="btn btn-outline-danger" type="button" data-bs-toggle="collapse" data-bs-target="#battleProcessing" aria-expanded="false" aria-controls="battleProcessing">對戰處理</button>
+    }
+</div>
+
 @if (Model.CanTerminateQuick || Model.CanCancelQuick)
 {
-    <section class="card card-body border-danger mb-3">
-        <h2 class="h5">快速對戰終止處理</h2>
-        <p class="small text-muted">棄權會保留已完成回合；取消則永久刪除整場對戰、回合與事件。</p>
+    <section id="battleProcessing" class="collapse card card-body border-danger mb-3">
+        <h2 class="h5">對戰處理</h2>
+        <p class="small text-muted">棄權會保留已完成回合；取消會永久移除整場快速對戰。</p>
         @if (Model.CanTerminateQuick)
         {
             <div class="row g-2 mb-3">
-                <div class="col-6">
-                    <form method="post" asp-page-handler="ForfeitQuick" onsubmit="return confirm('確定判定 @Model.SideALabel 棄權？對手將直接獲勝。')">
-                        <input type="hidden" name="id" value="@Model.Battle.Id" />
-                        <input type="hidden" name="forfeitingPlayerId" value="@Model.Battle.PlayerAId" />
-                        <button class="btn btn-outline-danger w-100">@Model.SideALabel 棄權</button>
-                    </form>
-                </div>
-                <div class="col-6">
-                    <form method="post" asp-page-handler="ForfeitQuick" onsubmit="return confirm('確定判定 @Model.SideBLabel 棄權？對手將直接獲勝。')">
-                        <input type="hidden" name="id" value="@Model.Battle.Id" />
-                        <input type="hidden" name="forfeitingPlayerId" value="@Model.Battle.PlayerBId" />
-                        <button class="btn btn-outline-danger w-100">@Model.SideBLabel 棄權</button>
-                    </form>
-                </div>
+                <div class="col-6"><form method="post" asp-page-handler="ForfeitQuick" onsubmit="return confirm('確定判定 B Side 棄權？')"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="forfeitingPlayerId" value="@Model.BPlayerId" /><button class="btn btn-outline-danger w-100">B Side 棄權</button></form></div>
+                <div class="col-6"><form method="post" asp-page-handler="ForfeitQuick" onsubmit="return confirm('確定判定 X Side 棄權？')"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="forfeitingPlayerId" value="@Model.XPlayerId" /><button class="btn btn-outline-danger w-100">X Side 棄權</button></form></div>
             </div>
         }
         @if (Model.CanCancelQuick)
         {
-            <details>
-                <summary class="text-danger">取消整場快速對戰</summary>
-                <form method="post" asp-page-handler="CancelQuick" class="mt-2" onsubmit="return confirm('這會永久刪除整場資料且無法復原。確定取消？')">
-                    <input type="hidden" name="id" value="@Model.Battle.Id" />
-                    <div class="form-check mb-2">
-                        <input id="confirmCancellation" name="confirmCancellation" value="true" type="checkbox" class="form-check-input" required />
-                        <label for="confirmCancellation" class="form-check-label">我了解整場資料會永久刪除，且完全不列入統計</label>
-                    </div>
-                    <button class="btn btn-danger">永久取消對戰</button>
-                </form>
-            </details>
+            <details><summary class="text-danger">取消整場快速對戰</summary><form method="post" asp-page-handler="CancelQuick" class="mt-3" onsubmit="return confirm('這會永久刪除整場資料且無法復原。確定取消？')"><input type="hidden" name="id" value="@Model.Battle.Id" /><div class="form-check mb-2"><input id="confirmCancellation" name="confirmCancellation" value="true" type="checkbox" class="form-check-input" required /><label for="confirmCancellation" class="form-check-label">我了解整場資料會永久刪除，且不列入統計</label></div><button class="btn btn-danger">永久取消對戰</button></form></details>
         }
     </section>
 }
-@if (Model.Battle.TournamentMatch?.Status == TournamentMatchStatus.ReorderSelection) { <div class="alert alert-info">本組已完成且尚未達勝分，等待雙方私密重排。</div><a asp-page="/Tournaments/Match" asp-route-id="@Model.Battle.TournamentMatchId" class="btn btn-primary mb-3">前往重排</a> }
-@if (Model.Battle.TournamentMatchId is not null && Model.Battle.Status == BattleStatus.InProgress) { <a asp-page="/Tournaments/Match" asp-route-id="@Model.Battle.TournamentMatchId" class="btn btn-outline-danger mb-3">返回對局／辦理棄權</a> }
-@if (Model.Battle.Status == BattleStatus.Voided && Model.SourceMatchId is int sourceMatchId) { <a asp-page="/Tournaments/Match" asp-route-id="@sourceMatchId" class="btn btn-primary mb-3">前往重開後的對局</a> }
-@if (Model.CurrentRound is not null) { <section class="card card-body mb-3"><h1 class="h4">Round @Model.CurrentRound.RoundNo：@Model.CurrentRound.PlayerADisplayNameSnapshot／@Model.CurrentRound.PlayerABeybladeNameSnapshot vs @Model.CurrentRound.PlayerBDisplayNameSnapshot／@Model.CurrentRound.PlayerBBeybladeNameSnapshot</h1><div class="small text-muted mb-3">@Model.CurrentRound.PlayerABeybladeNameSnapshot 失誤：@BeybladeRecordSystem.Domain.BattleRules.FaultCount(Model.CurrentRound.Events, Model.CurrentRound.PlayerAId!.Value)　@Model.CurrentRound.PlayerBBeybladeNameSnapshot 失誤：@BeybladeRecordSystem.Domain.BattleRules.FaultCount(Model.CurrentRound.Events, Model.CurrentRound.PlayerBId!.Value)</div>@if (Model.CanOperate && Model.Battle.Status == BattleStatus.InProgress) { <div class="row g-2 mb-3"><div class="col-6"><form method="post" asp-page-handler="Fault"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="playerId" value="@Model.CurrentRound.PlayerAId" /><button class="btn btn-outline-danger btn-lg w-100">@Model.CurrentRound.PlayerADisplayNameSnapshot 發射失誤</button></form></div><div class="col-6"><form method="post" asp-page-handler="Fault"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="playerId" value="@Model.CurrentRound.PlayerBId" /><button class="btn btn-outline-danger btn-lg w-100">@Model.CurrentRound.PlayerBDisplayNameSnapshot 發射失誤</button></form></div></div>@if (!Model.CurrentRound.Events.Any(x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult)) { <h2 class="h5">記錄勝負（點選得分方）</h2><div class="row g-2">@foreach (var player in new[] { (Model.CurrentRound.PlayerAId, Model.CurrentRound.PlayerADisplayNameSnapshot), (Model.CurrentRound.PlayerBId, Model.CurrentRound.PlayerBDisplayNameSnapshot) }) { <div class="col-6"><div class="d-grid gap-2">@foreach (var type in Enum.GetValues<ResultType>()) { <form method="post" asp-page-handler="Result"><input type="hidden" name="id" value="@Model.Battle.Id" /><input type="hidden" name="winnerPlayerId" value="@player.Item1" /><input type="hidden" name="resultType" value="@type" /><button class="btn btn-primary btn-lg">@player.Item2：@(type switch { ResultType.SpinFinish => "轉停 +1", ResultType.KnockOut => "擊飛 +2", ResultType.Burst => "爆裂 +2", _ => "極限 +3" })</button></form> }</div></div> }</div> } else { <form method="post" asp-page-handler="CompleteRound"><input type="hidden" name="id" value="@Model.Battle.Id" /><button class="btn btn-success btn-lg w-100 mt-3">完成此 Round</button></form> }}</section> }
+
+@if (Model.CanReorder)
+{
+    <a asp-page="Reorder" asp-route-id="@Model.Battle.Id" class="btn btn-primary mb-3">密封重新排列</a>
+}
+@if (Model.Battle.TournamentMatch?.Status == TournamentMatchStatus.ReorderSelection)
+{
+    <div class="alert alert-info">本組已完成且尚未達勝分，等待雙方私密重排。</div>
+    <a asp-page="/Tournaments/Match" asp-route-id="@Model.Battle.TournamentMatchId" class="btn btn-primary mb-3">前往重排</a>
+}
+@if (Model.SourceMatchId is int sourceMatchId)
+{
+    <a asp-page="/Tournaments/Match" asp-route-id="@sourceMatchId" class="btn btn-outline-secondary mb-3">返回賽事對局</a>
+}

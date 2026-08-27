@@ -45,8 +45,7 @@ Login 回傳 User 給 PageModel 建立 authentication cookie；Service 不保存
 - AssignSidesAsync(battleId, operatorUserId, sideA)
 - StartBattleAsync(battleId, operatorUserId)
 - RecordLaunchFaultAsync(battleId, roundId, operatorUserId, actorPlayerId)
-- RecordBattleResultAsync(battleId, roundId, operatorUserId, winnerPlayerId, resultType)
-- CompleteRoundAsync(battleId, roundId, operatorUserId)
+- RecordAndCompleteRoundAsync(battleId, roundId, operatorUserId, winnerPlayerId, resultType)
 - FinishBattleAsync(battleId, operatorUserId)
 - ForfeitQuickBattleAsync(battleId, creatorId, forfeitingPlayerId)
 - CancelQuickBattleAsync(battleId, creatorId, confirmed)
@@ -70,20 +69,28 @@ BattleService 不接受任意 Score、Side 分數、ScoreToWin、WinningSide、T
 
 列表只回傳登入者本人的待辦與身份，不公開 Account、私密 submission、其他人的 pending invitation 或未完成臨時隊伍。
 
-### 唯讀 polling handlers
+### 即時同步與唯讀備援 handlers
+
+- `/hubs/realtime` — 使用 Cookie 驗證，只將連線加入該登入 UserId 的私人群組。Server 在交易提交後發布通知或流程狀態已變更事件。
 
 - `Tournaments/Index?handler=Poll` — 回傳目前分頁與篩選的變更 token。
 - `Tournaments/Details/{id}?handler=Poll` — 回傳公開 read model 變更 token 與 Tournament status。
 - `Tournaments/Match/{id}?handler=Poll` — 維持 workspace authorization，只回傳 Match／Battle 變更 token 與 status。
 
-上述 handler 只接受 GET、回傳最小 JSON 並使用 no-store；前端只有 token 改變才重新 GET 畫面，不重送 POST 或自動執行狀態轉換。
+上述 handler 只接受 GET、回傳最小 JSON並使用 no-store；供 SignalR 斷線、重連、頁面回到前景及低頻備援同步使用，不重送 POST 或自動執行狀態轉換。
+
+### 通知與玩家搜尋頁面
+
+- `Notifications?handler=Unread` — 只回傳登入者未讀摘要。
+- `Notifications` 的安全 POST handlers — 接受通知列舉動作、單筆已讀及全部已讀；每次重新驗證登入者、關聯實體、狀態與 anti-forgery token。
+- `Players/Search?q=` — 以 DisplayName 模糊搜尋，只回傳最多十筆 UserId 與 DisplayName，不回傳 Account。
 
 ### 報名與邀請
 
 - RegisterIndividualAsync(tournamentId, userId)
 - WithdrawAsync(tournamentId, userId)
 - CloseRegistrationAsync(tournamentId, organizerUserId)
-- InviteParticipantAsync(tournamentId, organizerUserId, accountOrDisplayName)
+- InviteParticipantAsync(tournamentId, organizerUserId, invitedUserId)
 - GetPendingParticipantInvitationAsync(tournamentId, userId)
 - RespondToTournamentInvitationAsync(invitationId, invitedUserId, accept)
 - ReopenRegistrationAsync(tournamentId, organizerUserId) — 個人、整隊與系統配隊共用；必要時清除未開始賽程草稿與 SchedulePosition。
@@ -91,7 +98,7 @@ BattleService 不接受任意 Score、Side 分數、ScoreToWin、WinningSide、T
 ### 整隊報名
 
 - CreateTemporaryTeamAsync(tournamentId, representativeUserId, teamName)
-- InviteTeamMemberAsync(tournamentId, entryId, representativeUserId, accountOrDisplayName)
+- InviteTeamMemberAsync(tournamentId, entryId, representativeUserId, invitedUserId)
 - RespondToTeamInvitationAsync(invitationId, invitedUserId, accept)
 - RegisterCompleteTeamAsync(tournamentId, entryId, representativeUserId)
 - TransferRepresentativeAsync(tournamentId, entryId, currentRepresentativeId, newRepresentativeId)

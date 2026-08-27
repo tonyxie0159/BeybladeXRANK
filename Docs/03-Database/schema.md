@@ -6,11 +6,23 @@ SQLite + EF Core migrations。以下是現行正式資料概念；省略 navigat
 
 - `Id` PK
 - `Account` UNIQUE NOT NULL
+- `NormalizedAccount` UNIQUE NOT NULL
 - `PasswordHash` NOT NULL
 - `DisplayName` NOT NULL
+- `NormalizedDisplayName` UNIQUE NOT NULL
 - `CreatedAtUtc`、`UpdatedAtUtc`
 
-Account 是登入識別；所有資料關聯使用 UserId，不使用 DisplayName。
+Account 是不公開的登入識別；Account 與 DisplayName 都以 trim 後、英文不分大小寫的正規化值建立唯一索引。所有資料關聯使用 UserId，不使用 DisplayName。
+
+## UserNotification
+
+- `Id` PK、`UserId` FK
+- `Kind`、`Title`、`Message`、`TargetUrl`
+- `EntityType`、`EntityId` nullable
+- `ActionType`、`ActionEntityId` nullable、`DedupeKey` UNIQUE
+- `CreatedAtUtc`、`ReadAtUtc` nullable、`ResolvedAtUtc` nullable
+
+通知與對應業務變更在同一交易保存。`TargetUrl` 與 `ActionType` 只能由 Server 列舉的安全動作產生，不接受 Client 任意處理器或網址。
 
 ## Beyblade
 

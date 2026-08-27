@@ -57,9 +57,10 @@ public class TournamentStandingsService(AppDbContext db)
         if (completed.Count == 0) return [];
         foreach (var match in completed)
         {
+            if (match.IsBye) continue;
             if (match.WinnerEntryId is int winnerId && stats.TryGetValue(winnerId, out var winner)) winner.Wins++;
             if (match.LoserEntryId is int loserId && stats.TryGetValue(loserId, out var loser)) loser.Losses++;
-            if (match.IsBye || match.SideAEntryId is not int sideAId || match.SideBEntryId is not int sideBId) continue;
+            if (match.SideAEntryId is not int sideAId || match.SideBEntryId is not int sideBId) continue;
             stats[sideAId].Opponents.Add(sideBId);
             stats[sideBId].Opponents.Add(sideAId);
             if (match.Battle is not { Status: BattleStatus.Completed } battle) continue;
@@ -300,8 +301,8 @@ public class TournamentStandingsService(AppDbContext db)
         : a.Wins == b.Wins && a.DirectEncounterWins == b.DirectEncounterWins &&
           a.GroupScoreDifference == b.GroupScoreDifference && a.ScoreDifference == b.ScoreDifference && a.PointsFor == b.PointsFor;
 
-    private static bool IsRankedResult(TournamentMatch match) => match.Status is
-        TournamentMatchStatus.Completed or TournamentMatchStatus.Walkover or TournamentMatchStatus.Forfeited &&
+    private static bool IsRankedResult(TournamentMatch match) =>
+        (match.Status is TournamentMatchStatus.Completed or TournamentMatchStatus.Walkover or TournamentMatchStatus.Forfeited) &&
         match.WinnerEntryId is not null;
 
     private static bool IsTerminalStatus(TournamentMatchStatus status) => status is

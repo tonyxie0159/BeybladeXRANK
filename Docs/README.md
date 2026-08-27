@@ -42,7 +42,7 @@ GitHub repository 是程式碼與本文件集的共享版本來源。Codex 本�
 - 單淘汰、雙敗、單循環與瑞士輪。
 - Battle、Round、事件、修正紀錄及來源／B／X Side 戰績。
 
-技術固定為 .NET 10、ASP.NET Core Razor Pages、Bootstrap、Vanilla JavaScript、EF Core、SQLite、Docker 與主機側 Cloudflare Tunnel。第一版不採 SPA、獨立 API Server、獨立 DB Container、WebSocket 或 SignalR。
+技術固定為 .NET 10、ASP.NET Core Razor Pages、Bootstrap、Vanilla JavaScript、SignalR、EF Core、SQLite、Docker 與主機側 Cloudflare Tunnel。不採 SPA、獨立 API Server、獨立 DB Container 或 Redis；即時事件只負責通知狀態已變更，所有狀態與規則仍由 Server 與資料庫決定。
 
 ## 全域有效規則
 
@@ -51,7 +51,9 @@ GitHub repository 是程式碼與本文件集的共享版本來源。Codex 本�
 - `Player A/B` 是資料配對方向，`B/X Side` 是開賽前鎖定的站位，兩者不可混用。
 - 轉停 1 分、擊飛 2 分、爆裂 2 分、極限 3 分；第二次有效發射失誤使對手得 1 分且 fault count 歸零。
 - 達 `ScoreToWin` 只進入 `VictoryPendingCompletion`，必須由授權裁判明確完成。
+- 正常勝利方式以單一交易記錄結果並完成該 Round，不再要求逐局第二次確認；修改較早 Round 時，所有後續 Round 保留稽核資料但失效並從下一站位重開。
 - 同一 Battle 的重排只能使用首次鎖定的陀螺，保存新 `SequenceNo`，分數不歸零。
+- `Account` 與 `DisplayName` 均使用去除前後空白、英文不分大小寫的正規化唯一值；玩家搜尋只顯示 DisplayName 與內部 UserId。
 - 快速對戰取消會交易式硬刪除 aggregate；Tournament 取消、棄權或撤銷必須保留規範要求的歷史與 audit。
 - 戰績由 Battle、Round 與有效 Event 即時計算，不建立 Statistics Table。
 - 快速、Tournament 個人、Tournament 團體隊伍結果與團體實際小局分開計算；B／X Side 可獨立篩選與排序。

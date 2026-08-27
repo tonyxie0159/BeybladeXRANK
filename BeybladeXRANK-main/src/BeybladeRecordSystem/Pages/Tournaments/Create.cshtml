@@ -2,16 +2,74 @@
 @model BeybladeRecordSystem.Pages.Tournaments.CreateModel
 @using BeybladeRecordSystem.Domain.Enums
 @using BeybladeRecordSystem.Domain.Tournaments
-@{ ViewData["Title"] = "建立比賽"; }
-<h1>建立比賽</h1>
-<p class="text-muted">規則會保存為 Snapshot，建立後不會因系統文字更新而改變。</p>
-<form method="post" class="card card-body">
+@using BeybladeRecordSystem.Services
+@{
+    ViewData["Title"] = "建立比賽";
+}
+
+<header class="page-header"><div><p class="eyebrow"><span></span>NEW TOURNAMENT</p><h1>建立比賽</h1><p>先選擇單人或團體模式，系統只顯示適用的規則與報名方式。</p></div></header>
+
+<form method="post" class="card card-body" id="tournamentCreateForm">
     <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
     <div class="mb-3"><label asp-for="Name" class="form-label">比賽名稱</label><input asp-for="Name" class="form-control" /><span asp-validation-for="Name" class="text-danger"></span></div>
-    <div class="mb-3"><label asp-for="RuleSet" class="form-label">比賽模式與規則</label><select asp-for="RuleSet" class="form-select">@foreach (var rule in Model.Rules) { <option value="@rule.RuleSet">@rule.DisplayName</option> }</select></div>
-    <div class="mb-3"><label asp-for="RegistrationMode" class="form-label">報名方式</label><select asp-for="RegistrationMode" class="form-select"><option value="@TournamentRegistrationMode.Individual">個人報名（僅單人賽）</option><option value="@TournamentRegistrationMode.CompleteTeam">整隊報名</option><option value="@TournamentRegistrationMode.SystemAssignedTeam">個人報名後系統配隊</option></select></div>
-    <div class="mb-3"><label asp-for="Format" class="form-label">賽制</label><select asp-for="Format" asp-items="Html.GetEnumSelectList<TournamentFormat>()" class="form-select"></select></div>
+    <div class="mb-3">
+        <label asp-for="Mode" class="form-label">比賽模式</label>
+        <select asp-for="Mode" class="form-select" id="tournamentMode">
+            <option value="@TournamentMode.Individual">單人賽</option>
+            <option value="@TournamentMode.Team">團體賽</option>
+        </select>
+    </div>
+    <div class="mb-3">
+        <label asp-for="RuleSet" class="form-label">比賽規則</label>
+        <select asp-for="RuleSet" class="form-select" id="tournamentRuleSet">
+            @foreach (var rule in Model.Rules)
+            {
+                <option value="@rule.RuleSet" data-mode="@rule.Mode">@rule.DisplayName</option>
+            }
+        </select>
+        <span asp-validation-for="RuleSet" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="RegistrationMode" class="form-label">報名方式</label>
+        <select asp-for="RegistrationMode" class="form-select" id="registrationMode">
+            <option value="@TournamentRegistrationMode.Individual" data-mode="Individual">個人報名</option>
+            <option value="@TournamentRegistrationMode.CompleteTeam" data-mode="Team">隊伍報名</option>
+            <option value="@TournamentRegistrationMode.SystemAssignedTeam" data-mode="Team">由系統自動組隊</option>
+        </select>
+    </div>
+    <div class="mb-3">
+        <label asp-for="Format" class="form-label">賽制</label>
+        <select asp-for="Format" class="form-select">
+            @foreach (var format in Enum.GetValues<TournamentFormat>())
+            {
+                <option value="@format">@TournamentDisplay.Label(format)</option>
+            }
+        </select>
+    </div>
     <div class="mb-3"><label asp-for="TargetEntryCount" class="form-label">目標參賽人數／隊伍數</label><input asp-for="TargetEntryCount" class="form-control" /><span asp-validation-for="TargetEntryCount" class="text-danger"></span><div class="form-text">單循環最多 32、雙敗最多 256，其餘最多 512。</div></div>
     <div class="mb-3"><label asp-for="Notes" class="form-label">主辦方備註（選填）</label><textarea asp-for="Notes" class="form-control" rows="4"></textarea><span asp-validation-for="Notes" class="text-danger"></span></div>
     <button class="btn btn-primary btn-lg">確認建立</button>
 </form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+    (() => {
+        const mode = document.getElementById('tournamentMode');
+        const rules = document.getElementById('tournamentRuleSet');
+        const registration = document.getElementById('registrationMode');
+        const applyMode = () => {
+            const selectedMode = mode.value;
+            for (const option of rules.options) option.hidden = option.dataset.mode !== selectedMode;
+            if (rules.selectedOptions[0]?.hidden) rules.value = [...rules.options].find(x => !x.hidden).value;
+            for (const option of registration.options) option.hidden = option.dataset.mode !== selectedMode;
+            if (registration.selectedOptions[0]?.hidden) registration.value = [...registration.options].find(x => !x.hidden).value;
+            registration.disabled = selectedMode === 'Individual';
+            if (registration.disabled) registration.value = 'Individual';
+        };
+        mode.addEventListener('change', applyMode);
+        document.getElementById('tournamentCreateForm').addEventListener('submit', () => registration.disabled = false);
+        applyMode();
+    })();
+    </script>
+}

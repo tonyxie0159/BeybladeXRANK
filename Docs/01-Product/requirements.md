@@ -8,7 +8,9 @@
 
 - `Account`：唯一、不可修改的登入識別。
 - `PasswordHash`：只保存 ASP.NET Core PasswordHasher 產生的雜湊，不保存明文。
-- `DisplayName`：可修改的顯示名稱，不作為資料所有權或唯一識別。
+- `DisplayName`：唯一且可修改的顯示名稱，不作為資料所有權識別。
+
+`Account` 與 `DisplayName` 都以去除前後空白、英文不分大小寫的正規化值檢查唯一性。玩家搜尋、邀請與公開頁只顯示 DisplayName 及內部 UserId，不公開 Account。
 
 使用者只能管理自己的帳號顯示名稱、Beyblade、Battle 操作及統計查詢範圍。所有 PageModel 與 Service 都必須重新驗證登入者、資源所有權及目前狀態，不信任 hidden field、route 或 query string。
 
@@ -34,7 +36,7 @@
 6. 接受重新編輯時建立下一個 `SequenceNo` 並使雙方重新提交；拒絕時維持原版本，提出者不得在同版本再次要求。
 7. 雙方確認後物化並鎖定 BattleLineup，由發起人以臨時裁判身分明確指定資料 Side A 為 B Side 或 X Side，再開始對戰。
 
-站內通知、待處理邀請、準備中與進行中的快速對戰都必須有可返回入口。流程狀態、私密提交、比分、Round、Event 與 fault count 全部保存於後端；刷新、登出或瀏覽其他頁面不得重建或重置 Battle。
+站內通知、待處理邀請、準備中與進行中的快速對戰都必須有可返回入口。流程狀態、私密提交、比分、Round、Event 與 fault count 全部保存於後端；刷新、登出或瀏覽其他頁面不得重建或重置 Battle。SignalR 在交易成功後即時通知相關玩家，斷線重連、頁面回到前景及低頻輪詢會向 Server 補齊狀態。
 
 ## 4. Battle 共通模型
 
@@ -71,7 +73,7 @@ Client 只提交事件意圖；`ScoreAwarded`、累積比分、Round 狀態與 B
 - LaunchFault 與 LaunchFaultPenalty 都不會自行完成 Round；正常完成仍需一個有效 BattleResult。
 - fault count 從有效事件重建，不另存可漂移的計數欄位。
 
-每次有效得分後立即檢查 `ScoreToWin`。達標時進入 `VictoryPendingCompletion`，禁止新增後續正常得分；授權裁判檢查後明確完成 Battle。
+點擊正常勝利方式時，Server 在同一交易記錄 BattleResult、完成目前 Round、重新計分並在合法時建立下一 Round，不再要求逐局額外確認。每次有效得分後立即檢查 `ScoreToWin`；達標時進入 `VictoryPendingCompletion`，禁止新增後續正常得分，授權裁判檢查後明確完成整場 Battle。
 
 ## 6. 棄權、取消、撤銷與修正
 
@@ -92,7 +94,8 @@ Client 只提交事件意圖；`ScoreAwarded`、累積比分、Round 狀態與 B
 
 - 可查看指定 Round 的全部有效／無效事件並重新指定唯一有效 BattleResult。
 - Reason 必填；保存 Round 與全場修改前後快照。
-- 從最早受影響事件重播整場；首次達門檻後的事件失效，需要時可恢復原本被門檻截斷的事件。
+- 修改較早 Round 時，所有後續 Round 與事件保留原始資料並標記為 `EarlierRoundRevision` 失效，不直接刪除；從修改後的下一站位重新建立有效流程。
+- 從最早受影響事件重播整場；若修改後已達門檻，直接進入整場結束確認且不建立後續 Round。
 - Tournament 上游勝方變更必須依下游狀態重建、取得明確撤銷確認或阻擋修改。
 
 ## 7. Tournament

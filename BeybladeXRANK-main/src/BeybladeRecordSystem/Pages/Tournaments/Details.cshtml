@@ -7,11 +7,12 @@
 @{ var details = Model.PublicDetails; ViewData["Title"] = details.Name; var registered = details.Entries.Count; var isElimination = Model.Tournament.Format is TournamentFormat.SingleElimination or TournamentFormat.DoubleElimination; var hasChampionPlayoff = Model.Tournament.Matches.Any(x => x.Bracket == TournamentBracket.Playoff); }
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div><h1>@details.Name</h1><div class="text-muted">主辦：@details.OrganizerDisplayName</div></div>
-    <div class="text-end"><div><span class="badge text-bg-primary">@details.Status</span> <span class="badge text-bg-secondary">@details.RegistrationStage</span></div><a asp-page="Details" asp-route-id="@details.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div>
+    <div class="text-end"><div><span class="badge @TournamentDisplay.BadgeClass(details.Status)">@TournamentDisplay.Label(details.Status)</span> <span class="badge @TournamentDisplay.BadgeClass(details.RegistrationStage)">@TournamentDisplay.Label(details.RegistrationStage)</span></div><a asp-page="Details" asp-route-id="@details.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div>
 </div>
 <div id="tournament-poll-state" data-token="@details.PollToken" hidden></div>
 
 @section Scripts {
+<script src="~/js/player-search.js" asp-append-version="true"></script>
 <script>
 (() => {
     const state = document.getElementById('tournament-poll-state');
@@ -27,7 +28,7 @@
             const payload = await response.json();
             if (payload.token && payload.token !== initialToken) window.location.reload();
         } catch { }
-    }, 15000);
+    }, 60000);
 })();
 </script>
 }
@@ -42,11 +43,9 @@
 <section class="card card-body mb-3">
     <h2 class="h5">比賽規則</h2><p>@details.RulesSnapshot</p>
     @if (!string.IsNullOrWhiteSpace(details.Notes)) { <h3 class="h6">主辦方備註</h3><p>@details.Notes</p> }
-    <div class="row small text-muted g-2"><div class="col-md-6">建立：@details.CreatedAtUtc.ToLocalTime().ToString("g")</div><div class="col-md-6">更新：@details.UpdatedAtUtc.ToLocalTime().ToString("g")</div>
-    @if (details.RegistrationClosedAtUtc is DateTime registrationClosed) { <div class="col-md-6">關閉報名：@registrationClosed.ToLocalTime().ToString("g")</div> }
+    <div class="row small text-muted g-2"><div class="col-md-6">建立：@details.CreatedAtUtc.ToLocalTime().ToString("g")</div>
     @if (details.StartedAtUtc is DateTime started) { <div class="col-md-6">正式開始：@started.ToLocalTime().ToString("g")</div> }
     @if (details.CompletedAtUtc is DateTime completed) { <div class="col-md-6">完成：@completed.ToLocalTime().ToString("g")</div> }
-    @if (details.CancelledAtUtc is DateTime cancelled) { <div class="col-md-6">取消：@cancelled.ToLocalTime().ToString("g")</div> }
     </div>
 </section>
 @if (Model.ParticipantInvitation is not null)
@@ -79,8 +78,8 @@
         <form method="post" asp-page-handler="InviteParticipant" class="row g-2">
             <input type="hidden" name="id" value="@Model.Tournament.Id" />
             <div class="col-md-8">
-                <label asp-for="InviteParticipant" class="form-label">Account 或完整 DisplayName</label>
-                <input asp-for="InviteParticipant" class="form-control" autocomplete="off" />
+                <label for="inviteParticipantSearch" class="form-label">搜尋玩家名稱</label>
+                <div class="player-search"><input id="inviteParticipantSearch" class="form-control" autocomplete="off" data-player-search data-target="InviteParticipantUserId" data-results="inviteParticipantResults" data-tournament-id="@Model.Tournament.Id" placeholder="輸入至少一個字" /><input asp-for="InviteParticipantUserId" type="hidden" /><div id="inviteParticipantResults" class="player-search-results" hidden></div></div>
             </div>
             <div class="col-md-4 d-flex align-items-end"><button class="btn btn-outline-primary w-100">發送參賽邀請</button></div>
         </form>
@@ -90,32 +89,28 @@
 {
     <section class="card card-body mb-3">
         <h2 class="h5">完整賽程@(details.Status == TournamentStatus.RegistrationOpen ? "草稿" : null)</h2>
-        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>順序</th><th>組別／輪次</th><th>對戰</th><th>狀態</th><th>公開結果</th></tr></thead><tbody>
+        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>順序</th><th>出戰隊伍</th><th>對戰結果</th></tr></thead><tbody>
         @foreach (var match in details.Matches)
         {
             <tr class="@(match.IsCurrent ? "table-warning" : null)">
                 <td>@match.SequenceNumber @if (match.IsCurrent) { <span class="badge text-bg-warning">目前對局</span> }</td>
-                <td>@match.Bracket R@match.RoundNumber M@match.MatchNumber @if (match.IsSeedQualifier) { <span class="badge text-bg-warning">種子資格</span> } @if (match.IsResetFinal) { <span class="badge text-bg-danger">Reset Final</span> } @if (match.Bracket == TournamentBracket.Playoff) { <span class="badge text-bg-info">冠軍加賽</span> }</td>
                 <td>@match.SideALabel vs @match.SideBLabel</td>
-                <td>@if (match.CanOpenWorkspace) { <a asp-page="Match" asp-route-id="@match.Id">@match.Status</a> } else { @match.Status }</td>
                 <td>
-                    @if (match.WinnerLabel is not null) { <div><strong>勝方：@match.WinnerLabel</strong></div> }
-                    @if (match.Battle is { } publicBattle)
+                    <span class="badge @TournamentDisplay.BadgeClass(match.Status)">@TournamentDisplay.Label(match.Status)</span>
+                    @if (match.IsBye)
                     {
-                        var sideAName = publicBattle.SideADesignation == BattleSide.B ? "B Side" : publicBattle.SideADesignation == BattleSide.X ? "X Side" : "Side A";
-                        var sideBName = publicBattle.SideADesignation == BattleSide.B ? "X Side" : publicBattle.SideADesignation == BattleSide.X ? "B Side" : "Side B";
-                        <div>@match.SideALabel（@sideAName） @publicBattle.SideAScore：@publicBattle.SideBScore @match.SideBLabel（@sideBName）／目標 @publicBattle.ScoreToWin 分</div>
-                        <details class="mt-1"><summary>公開陣容與實際出戰</summary>
-                        @foreach (var sequence in publicBattle.Lineup.GroupBy(x => x.SequenceNo).OrderBy(x => x.Key))
-                        {
-                            <div class="small fw-semibold mt-2">第 @sequence.Key 組@if (sequence.Any(x => x.IsCurrent)) { <span>（目前）</span> }</div>
-                            <table class="table table-sm mb-1"><thead><tr><th>順位</th><th>@match.SideALabel</th><th>@match.SideBLabel</th></tr></thead><tbody>
-                            @foreach (var position in sequence.OrderBy(x => x.PositionNo)) { <tr><td>@position.PositionNo</td><td>@position.PlayerADisplayName／@position.PlayerABeybladeName</td><td>@position.PlayerBDisplayName／@position.PlayerBBeybladeName</td></tr> }
-                            </tbody></table>
-                        }
-                        </details>
+                        <span> @match.SideALabel 輪空／自動晉級</span>
                     }
-                    @if (!string.IsNullOrWhiteSpace(match.ResolutionSummary)) { <div class="small text-muted">@match.ResolutionSummary</div> }
+                    else if (match.Status == TournamentMatchStatus.Walkover && match.WinnerLabel is not null)
+                    {
+                        <span> @match.WinnerLabel 不戰勝</span>
+                    }
+                    else if (match.WinnerLabel is not null)
+                    {
+                        <strong> 勝方：@match.WinnerLabel</strong>
+                        @if (match.Battle is { } publicBattle) { <span>，比分 @publicBattle.SideAScore：@publicBattle.SideBScore</span> }
+                    }
+                    @if (match.CanOpenWorkspace) { <a asp-page="Match" asp-route-id="@match.Id" class="d-block small mt-1">前往對局</a> }
                 </td>
             </tr>
         }
@@ -130,57 +125,32 @@
 @if (Model.ActionMatches.Any())
 {
     <section class="card card-body mb-3"><h2 class="h5">等待我處理</h2><div class="list-group">
-    @foreach (var action in Model.ActionMatches) { <a asp-page="Match" asp-route-id="@action.MatchId" class="list-group-item list-group-item-action d-flex justify-content-between"><span>對局 #@action.SequenceNumber：@action.Label</span><span>@action.Status</span></a> }
+    @foreach (var action in Model.ActionMatches) { <a asp-page="Match" asp-route-id="@action.MatchId" class="list-group-item list-group-item-action d-flex justify-content-between"><span>對局 #@action.SequenceNumber：@action.Label</span><span>@TournamentDisplay.Label(action.Status)</span></a> }
     </div></section>
 }
 @if (Model.Standings.Any())
 {
     <section class="card card-body mb-3">
         <h2 class="h5">@(Model.Tournament.Status == TournamentStatus.Completed ? "正式排名" : "目前排名")</h2>
-        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>名次</th><th>參賽單位</th><th>勝</th><th>敗</th>
-        @if (isElimination) { <th>名次依據</th> }
-        else if (Model.Tournament.Format == TournamentFormat.Swiss) { <th>Buchholz</th><th>對手勝率</th> }
-        else { <th>同分群組差</th><th>直接對戰</th> }
-        <th>總得失分</th><th>總得分</th></tr></thead><tbody>
+        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>名次</th><th>@(Model.Tournament.Mode == TournamentMode.Team ? "參賽隊伍" : "參賽者")</th><th>勝</th><th>敗</th><th>總得失分</th></tr></thead><tbody>
         @foreach (var row in Model.Standings)
         {
-            var placementLabel = row.Placement switch
-            {
-                TournamentStandingPlacement.Champion => "冠軍",
-                TournamentStandingPlacement.RunnerUp => "決賽敗方",
-                TournamentStandingPlacement.Eliminated when row.EliminationBracket == TournamentBracket.Losers => $"敗部第 {row.EliminationRoundNumber} 輪淘汰",
-                TournamentStandingPlacement.Eliminated => $"第 {row.EliminationRoundNumber} 輪淘汰",
-                _ => "—"
-            };
-            <tr><td>@row.Rank@if (row.IsTied) { <span class="text-muted">（並列）</span> }</td><td>@row.DisplayName @if (row.Placement == TournamentStandingPlacement.Champion) { <span class="badge text-bg-warning">冠軍</span> }</td><td>@row.Wins</td><td>@row.Losses</td>
-            @if (isElimination) { <td>@placementLabel</td> }
-            else if (Model.Tournament.Format == TournamentFormat.Swiss) { <td>@row.Buchholz</td><td>@row.OpponentWinRate.ToString("P1")</td> }
-            else { <td>@row.GroupScoreDifference</td><td>@(row.DirectEncounterWins > 0 ? "勝" : "—")</td> }
-            <td>@row.ScoreDifference</td><td>@row.PointsFor</td></tr>
+            <tr><td>@row.Rank@if (row.IsTied) { <span class="text-muted">（並列）</span> }</td><td>@row.DisplayName @if (row.Placement == TournamentStandingPlacement.Champion) { <span class="badge text-bg-warning">冠軍</span> }</td><td>@row.Wins</td><td>@row.Losses</td><td>@row.ScoreDifference</td></tr>
         }
         </tbody></table></div>
-        @if (isElimination)
-        {
-            <p class="small text-muted mb-0">賽事完成後才公布正式名次；單淘汰依淘汰輪次、雙敗依第二敗所在階段並列。Bye／Walkover 不虛構比分。</p>
-        }
-        else if (hasChampionPlayoff && Model.Tournament.Status == TournamentStatus.InProgress)
-        {
-            <p class="small text-muted mb-0">冠軍候選在全部 tie-break 後仍完全相同，冠軍加賽進行中；加賽只決定冠軍，不改寫原賽程排名統計。</p>
-        }
-        else if (hasChampionPlayoff)
-        {
-            <p class="small text-muted mb-0">冠軍由必要加賽決定；其他原本完全同分的 Entry 維持並列，加賽不改寫原賽程排名統計。</p>
-        }
-        else
-        {
-            <p class="small text-muted mb-0">Bye／Walkover 計排名勝場，但不加入得失分差；完全同分時顯示並列。</p>
-        }
+        <details class="mt-3"><summary>排名依據</summary>
+            <p class="small text-muted mt-2">勝場相同時，兩隊優先比較直接對戰；三隊以上同分則比較同分群組內得失分，再比較全賽事總得失分與總得分。瑞士輪另依對手分（Buchholz）及對手勝率排序。輪空不計勝敗；不戰勝計一勝一敗，但不計得失分。</p>
+            <div class="table-responsive"><table class="table table-sm"><thead><tr><th>參賽者／隊伍</th><th>直接對戰</th><th>同分群組差</th><th>總得分</th><th>對手分</th><th>對手勝率</th></tr></thead><tbody>
+            @foreach (var row in Model.Standings) { <tr><td>@row.DisplayName</td><td>@(row.DirectEncounterWins > 0 ? "勝" : "—")</td><td>@row.GroupScoreDifference</td><td>@row.PointsFor</td><td>@row.Buchholz</td><td>@row.OpponentWinRate.ToString("P1")</td></tr> }
+            </tbody></table></div>
+        </details>
     </section>
 }
+@{ var standingByEntry = Model.Standings.ToDictionary(x => x.EntryId); }
 <section class="card card-body mb-3">
-    <div class="d-flex justify-content-between"><h2 class="h5">有效參賽者</h2><strong>@registered / @details.TargetEntryCount</strong></div>
+    <div class="d-flex justify-content-between"><h2 class="h5">@(Model.Tournament.Mode == TournamentMode.Team ? "參賽隊伍" : "參賽者列表")</h2><strong>@registered / @details.TargetEntryCount</strong></div>
     @if (!details.Entries.Any()) { <p class="text-muted mb-0">尚無參賽者。</p> }
-    else { <ol class="mb-0">@foreach (var entry in details.Entries) { <li>@entry.DisplayName <span class="text-muted">（編號 @entry.RegistrationNumber@if (entry.SchedulePosition is int position) { <span>，賽程位置 @position</span> }）</span>@if (entry.MemberDisplayNames.Any()) { <div class="small text-muted">成員：@string.Join("、", entry.MemberDisplayNames)</div> }</li> }</ol> }
+    else { <ol class="mb-0">@foreach (var entry in details.Entries) { var record = standingByEntry.GetValueOrDefault(entry.Id); <li><strong>@entry.DisplayName</strong> <span class="text-muted">勝 @(record?.Wins ?? 0)／敗 @(record?.Losses ?? 0)</span>@if (entry.MemberDisplayNames.Any()) { <div class="small text-muted">成員：@string.Join("、", entry.MemberDisplayNames)</div> }</li> }</ol> }
 </section>
 @if (Model.Tournament.Mode == TournamentMode.Team && Model.Tournament.RegistrationMode == TournamentRegistrationMode.CompleteTeam && Model.Tournament.Status == TournamentStatus.RegistrationOpen)
 {
@@ -217,11 +187,11 @@
         {
             var team = Model.TeamWorkspace.Team;
             var me = team.Members.Single(x => x.UserId == User.GetRequiredUserId());
-            <div class="d-flex justify-content-between"><strong>@(team.TeamName ?? "未命名隊伍")</strong><span>@team.Status｜@team.Members.Count / @Model.Tournament.TeamSize 人</span></div>
+            <div class="d-flex justify-content-between"><strong>@(team.TeamName ?? "未命名隊伍")</strong><span>@TournamentDisplay.Label(team.Status)｜@team.Members.Count / @Model.Tournament.TeamSize 人</span></div>
             <ul>@foreach (var member in team.Members.OrderBy(x => x.MemberOrder)) { <li>@member.DisplayNameSnapshot @if (member.IsRepresentative) { <span class="badge text-bg-warning">代表人</span> }</li> }</ul>
             @if (me.IsRepresentative && team.Status == TournamentEntryStatus.Pending && team.Members.Count < Model.Tournament.TeamSize)
             {
-                <form method="post" asp-page-handler="InviteTeamMember" class="row g-2 mb-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="entryId" value="@team.Id" /><div class="col-md-8"><label asp-for="InvitePlayer" class="form-label">以 Account 或完整 DisplayName 邀請</label><input asp-for="InvitePlayer" class="form-control" /></div><div class="col-md-4 d-flex align-items-end"><button class="btn btn-outline-primary w-100">發送邀請</button></div></form>
+                <form method="post" asp-page-handler="InviteTeamMember" class="row g-2 mb-2"><input type="hidden" name="id" value="@Model.Tournament.Id" /><input type="hidden" name="entryId" value="@team.Id" /><div class="col-md-8"><label for="inviteTeamPlayerSearch" class="form-label">搜尋玩家名稱</label><div class="player-search"><input id="inviteTeamPlayerSearch" class="form-control" autocomplete="off" data-player-search data-target="InvitePlayerUserId" data-results="inviteTeamPlayerResults" data-tournament-id="@Model.Tournament.Id" placeholder="輸入至少一個字" /><input asp-for="InvitePlayerUserId" type="hidden" /><div id="inviteTeamPlayerResults" class="player-search-results" hidden></div></div></div><div class="col-md-4 d-flex align-items-end"><button class="btn btn-outline-primary w-100">發送邀請</button></div></form>
             }
             @if (me.IsRepresentative && team.Status == TournamentEntryStatus.Pending && team.Members.Count == Model.Tournament.TeamSize)
             {

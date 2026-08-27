@@ -5,6 +5,7 @@ using BeybladeRecordSystem.Domain;
 using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
 using BeybladeRecordSystem.Domain.Tournaments;
+using BeybladeRecordSystem.Realtime;
 using BeybladeRecordSystem.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
@@ -59,7 +60,10 @@ public sealed record TournamentTeamWorkspace(
     IReadOnlyList<TournamentInvitation> PendingInvitations,
     IReadOnlyList<TournamentInvitation> PendingRepresentativeTransfers);
 
-public class TournamentService(AppDbContext db)
+public class TournamentService(
+    AppDbContext db,
+    NotificationService? notificationService = null,
+    IRealtimePublisher? realtimePublisher = null)
 {
     public async Task<ServiceResult<Tournament>> CreateAsync(int organizerUserId, CreateTournamentRequest request)
     {
@@ -660,7 +664,9 @@ public class TournamentService(AppDbContext db)
         tournament.UpdatedAtUtc = now;
         tournament.Version = Guid.NewGuid().ToByteArray();
 
-        foreach (var invitation in tournament.Invitations.Where(x => x.Status == TournamentInvitationStatus.Pending))
+        var invalidatedInvitations = tournament.Invitations
+            .Where(x => x.Status == TournamentInvitationStatus.Pending).ToList();
+        foreach (var invitation in invalidatedInvitations)
         {
             invitation.Status = TournamentInvitationStatus.Invalidated;
             invitation.InvalidatedAtUtc = now;
@@ -702,8 +708,11 @@ public class TournamentService(AppDbContext db)
             battle.Version = Guid.NewGuid().ToByteArray();
         }
 
+        var notifications = await QueueTournamentInvitationOutcomesAsync(
+            invalidatedInvitations, TournamentInvitationStatus.Invalidated);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+        await PublishTournamentNotificationsAsync(notifications, tournamentId);
         return ServiceResult.Success();
     }
 
@@ -712,6 +721,7 @@ public class TournamentService(AppDbContext db)
         int organizerUserId,
         string accountOrDisplayName)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         var search = accountOrDisplayName?.Trim() ?? string.Empty;
         if (search.Length == 0)
             return ServiceResult<TournamentInvitation>.Failure("請輸入 Account 或完整 DisplayName。");
@@ -764,12 +774,28 @@ public class TournamentService(AppDbContext db)
         try
         {
             await db.SaveChangesAsync();
+            var notification = await QueueTournamentInvitationCreatedAsync(
+                invitation, tournament.Name, UserNotificationActionType.AcceptTournamentInvitation);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            await PublishTournamentNotificationAsync(notification, tournament.Id);
             return ServiceResult<TournamentInvitation>.Success(invitation);
         }
         catch (DbUpdateException)
         {
             return ServiceResult<TournamentInvitation>.Failure("邀請狀態發生衝突，請重新整理後再試。");
         }
+    }
+
+    public async Task<ServiceResult<TournamentInvitation>> InviteParticipantAsync(
+        int tournamentId,
+        int organizerUserId,
+        int invitedUserId)
+    {
+        var account = await db.Users.AsNoTracking().Where(x => x.Id == invitedUserId).Select(x => x.Account).SingleOrDefaultAsync();
+        return account is null
+            ? ServiceResult<TournamentInvitation>.Failure("找不到指定玩家。")
+            : await InviteParticipantAsync(tournamentId, organizerUserId, account);
     }
 
     public Task<TournamentInvitation?> GetPendingParticipantInvitationAsync(int tournamentId, int userId) =>
@@ -803,8 +829,10 @@ public class TournamentService(AppDbContext db)
         {
             invitation.Status = TournamentInvitationStatus.Declined;
             invitation.RespondedAtUtc = now;
+            var notification = await QueueTournamentInvitationOutcomeAsync(invitation, false);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationAsync(notification, invitation.TournamentId);
             return ServiceResult.Success();
         }
 
@@ -816,8 +844,11 @@ public class TournamentService(AppDbContext db)
         {
             invitation.Status = TournamentInvitationStatus.Invalidated;
             invitation.InvalidatedAtUtc = now;
+            var notification = await QueueTournamentInvitationOutcomeAsync(
+                invitation, TournamentInvitationStatus.Invalidated);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationAsync(notification, invitation.TournamentId);
             return ServiceResult.Failure("這場比賽目前不接受邀請加入。");
         }
 
@@ -826,8 +857,11 @@ public class TournamentService(AppDbContext db)
         {
             invitation.Status = TournamentInvitationStatus.Invalidated;
             invitation.InvalidatedAtUtc = now;
+            var notification = await QueueTournamentInvitationOutcomeAsync(
+                invitation, TournamentInvitationStatus.Invalidated);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationAsync(notification, invitation.TournamentId);
             return ServiceResult.Failure("報名名額已滿，邀請已失效。");
         }
 
@@ -836,8 +870,11 @@ public class TournamentService(AppDbContext db)
         {
             invitation.Status = TournamentInvitationStatus.Invalidated;
             invitation.InvalidatedAtUtc = now;
+            var notification = await QueueTournamentInvitationOutcomeAsync(
+                invitation, TournamentInvitationStatus.Invalidated);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationAsync(notification, invitation.TournamentId);
             return ServiceResult.Failure("你已經報名這場比賽，邀請已失效。");
         }
 
@@ -872,16 +909,21 @@ public class TournamentService(AppDbContext db)
             : TournamentRegistrationStage.Open;
         tournament.UpdatedAtUtc = now;
         tournament.Version = Guid.NewGuid().ToByteArray();
-        await InvalidatePendingTournamentInvitationsAsync(
+        var invalidatedInvitations = await InvalidatePendingTournamentInvitationsAsync(
             tournament.Id, now, invitedUserId: invitedUserId, exceptInvitationId: invitation.Id);
         if (capacityReached)
-            await InvalidatePendingTournamentInvitationsAsync(
-                tournament.Id, now, exceptInvitationId: invitation.Id);
+            invalidatedInvitations.AddRange(await InvalidatePendingTournamentInvitationsAsync(
+                tournament.Id, now, exceptInvitationId: invitation.Id));
 
         try
         {
+            var notification = await QueueTournamentInvitationOutcomeAsync(invitation, true);
+            var notifications = await QueueTournamentInvitationOutcomesAsync(
+                invalidatedInvitations, TournamentInvitationStatus.Invalidated);
+            if (notification is not null) notifications.Add(notification);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationsAsync(notifications, invitation.TournamentId);
             return ServiceResult.Success();
         }
         catch (DbUpdateConcurrencyException)
@@ -941,13 +983,17 @@ public class TournamentService(AppDbContext db)
             ? TournamentRegistrationStage.CapacityReached
             : TournamentRegistrationStage.Open;
         tournament.Version = Guid.NewGuid().ToByteArray();
-        await InvalidatePendingTournamentInvitationsAsync(tournamentId, now, invitedUserId: userId);
+        var invalidatedInvitations = await InvalidatePendingTournamentInvitationsAsync(
+            tournamentId, now, invitedUserId: userId);
         if (capacityReached)
-            await InvalidatePendingTournamentInvitationsAsync(tournamentId, now);
+            invalidatedInvitations.AddRange(await InvalidatePendingTournamentInvitationsAsync(tournamentId, now));
         try
         {
+            var notifications = await QueueTournamentInvitationOutcomesAsync(
+                invalidatedInvitations, TournamentInvitationStatus.Invalidated);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationsAsync(notifications, tournamentId);
             return ServiceResult.Success();
         }
         catch (DbUpdateConcurrencyException)
@@ -1009,8 +1055,11 @@ public class TournamentService(AppDbContext db)
         tournament.RegistrationClosedAtUtc = now;
         tournament.UpdatedAtUtc = now;
         tournament.Version = Guid.NewGuid().ToByteArray();
-        await InvalidatePendingInvitationsAsync(tournamentId, now);
+        var invalidatedInvitations = await InvalidatePendingInvitationsAsync(tournamentId, now);
+        var notifications = await QueueTournamentInvitationOutcomesAsync(
+            invalidatedInvitations, TournamentInvitationStatus.Invalidated);
         await db.SaveChangesAsync();
+        await PublishTournamentNotificationsAsync(notifications, tournamentId);
         return ServiceResult.Success();
     }
 
@@ -1369,6 +1418,7 @@ public class TournamentService(AppDbContext db)
 
     public async Task<ServiceResult> InviteTeamMemberAsync(int tournamentId, int entryId, int representativeUserId, string accountOrDisplayName)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         var search = accountOrDisplayName?.Trim() ?? string.Empty;
         if (search.Length == 0) return ServiceResult.Failure("請輸入 Account 或完整 DisplayName。");
         var entry = await db.TournamentEntries.Include(x => x.Tournament).Include(x => x.Members)
@@ -1394,7 +1444,7 @@ public class TournamentService(AppDbContext db)
         if (await db.TournamentInvitations.AnyAsync(x => x.TournamentEntryId == entryId && x.InvitedUserId == invitedUser.Id && x.Status == TournamentInvitationStatus.Pending))
             return ServiceResult.Failure("已向該玩家發出待處理邀請。");
 
-        db.TournamentInvitations.Add(new TournamentInvitation
+        var teamInvitation = new TournamentInvitation
         {
             TournamentId = tournamentId,
             TournamentEntryId = entryId,
@@ -1403,8 +1453,14 @@ public class TournamentService(AppDbContext db)
             Type = TournamentInvitationType.Team,
             Status = TournamentInvitationStatus.Pending,
             CreatedAtUtc = DateTime.UtcNow
-        });
+        };
+        db.TournamentInvitations.Add(teamInvitation);
         await db.SaveChangesAsync();
+        var notification = await QueueTournamentInvitationCreatedAsync(
+            teamInvitation, entry.Tournament.Name, UserNotificationActionType.AcceptTeamInvitation);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await PublishTournamentNotificationAsync(notification, tournamentId);
         return ServiceResult.Success();
     }
 
@@ -1426,8 +1482,10 @@ public class TournamentService(AppDbContext db)
         invitation.RespondedAtUtc = now;
         if (!accept)
         {
+            var notification = await QueueTournamentInvitationOutcomeAsync(invitation, false);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationAsync(notification, invitation.TournamentId);
             return ServiceResult.Success();
         }
         if (invitation.TournamentEntry.Members.Count >= invitation.Tournament.TeamSize)
@@ -1452,8 +1510,13 @@ public class TournamentService(AppDbContext db)
             other.Status = TournamentInvitationStatus.Invalidated;
             other.InvalidatedAtUtc = now;
         }
+        var acceptedNotification = await QueueTournamentInvitationOutcomeAsync(invitation, true);
+        var notifications = await QueueTournamentInvitationOutcomesAsync(
+            otherInvitations, TournamentInvitationStatus.Invalidated);
+        if (acceptedNotification is not null) notifications.Add(acceptedNotification);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+        await PublishTournamentNotificationsAsync(notifications, invitation.TournamentId);
         return ServiceResult.Success();
     }
 
@@ -1484,12 +1547,16 @@ public class TournamentService(AppDbContext db)
             : TournamentRegistrationStage.Open;
         entry.Tournament.UpdatedAtUtc = now;
         entry.Tournament.Version = Guid.NewGuid().ToByteArray();
+        var invalidatedInvitations = new List<TournamentInvitation>();
         if (capacityReached)
-            await InvalidatePendingInvitationsAsync(tournamentId, now);
+            invalidatedInvitations.AddRange(await InvalidatePendingInvitationsAsync(tournamentId, now));
         try
         {
+            var notifications = await QueueTournamentInvitationOutcomesAsync(
+                invalidatedInvitations, TournamentInvitationStatus.Invalidated);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
+            await PublishTournamentNotificationsAsync(notifications, tournamentId);
             return ServiceResult.Success();
         }
         catch (DbUpdateConcurrencyException)
@@ -1504,6 +1571,7 @@ public class TournamentService(AppDbContext db)
 
     public async Task<ServiceResult> TransferRepresentativeAsync(int tournamentId, int entryId, int currentRepresentativeId, int newRepresentativeId)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         var entry = await db.TournamentEntries.Include(x => x.Tournament).Include(x => x.Members)
             .SingleOrDefaultAsync(x => x.Id == entryId && x.TournamentId == tournamentId && x.Status != TournamentEntryStatus.Withdrawn);
         if (entry is null) return ServiceResult.Failure("找不到隊伍。");
@@ -1515,7 +1583,7 @@ public class TournamentService(AppDbContext db)
         if (await db.TournamentInvitations.AnyAsync(x => x.TournamentEntryId == entryId &&
             x.Type == TournamentInvitationType.RepresentativeTransfer && x.Status == TournamentInvitationStatus.Pending))
             return ServiceResult.Failure("已有待處理的代表人轉讓。");
-        db.TournamentInvitations.Add(new TournamentInvitation
+        var transferInvitation = new TournamentInvitation
         {
             TournamentId = tournamentId,
             TournamentEntryId = entryId,
@@ -1524,13 +1592,20 @@ public class TournamentService(AppDbContext db)
             Type = TournamentInvitationType.RepresentativeTransfer,
             Status = TournamentInvitationStatus.Pending,
             CreatedAtUtc = DateTime.UtcNow
-        });
+        };
+        db.TournamentInvitations.Add(transferInvitation);
         await db.SaveChangesAsync();
+        var notification = await QueueTournamentInvitationCreatedAsync(
+            transferInvitation, entry.Tournament.Name, UserNotificationActionType.AcceptRepresentativeTransfer);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await PublishTournamentNotificationAsync(notification, tournamentId);
         return ServiceResult.Success();
     }
 
     public async Task<ServiceResult> RespondToRepresentativeTransferAsync(int invitationId, int invitedUserId, bool accept)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         var invitation = await db.TournamentInvitations.Include(x => x.Tournament)
             .Include(x => x.TournamentEntry).ThenInclude(x => x!.Members)
             .SingleOrDefaultAsync(x => x.Id == invitationId);
@@ -1551,7 +1626,10 @@ public class TournamentService(AppDbContext db)
             replacement.IsRepresentative = true;
             invitation.TournamentEntry.UpdatedAtUtc = DateTime.UtcNow;
         }
+        var notification = await QueueTournamentInvitationOutcomeAsync(invitation, accept);
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await PublishTournamentNotificationAsync(notification, invitation.TournamentId);
         return ServiceResult.Success();
     }
 
@@ -1567,6 +1645,7 @@ public class TournamentService(AppDbContext db)
 
         var now = DateTime.UtcNow;
         db.TournamentEntryMembers.Remove(member);
+        var invalidatedInvitations = new List<TournamentInvitation>();
         if (entry.Tournament.RegistrationStage == TournamentRegistrationStage.ScheduleDraftCreated)
         {
             await ClearScheduleAsync(entry.Tournament);
@@ -1575,7 +1654,9 @@ public class TournamentService(AppDbContext db)
         if (entry.Members.Count == 1)
         {
             entry.Status = TournamentEntryStatus.Withdrawn;
-            foreach (var invitation in entry.Tournament.Invitations.Where(x => x.TournamentEntryId == entry.Id && x.Status == TournamentInvitationStatus.Pending))
+            invalidatedInvitations.AddRange(entry.Tournament.Invitations.Where(x =>
+                x.TournamentEntryId == entry.Id && x.Status == TournamentInvitationStatus.Pending));
+            foreach (var invitation in invalidatedInvitations)
             {
                 invitation.Status = TournamentInvitationStatus.Invalidated;
                 invitation.InvalidatedAtUtc = now;
@@ -1592,7 +1673,10 @@ public class TournamentService(AppDbContext db)
         entry.UpdatedAtUtc = now;
         entry.Tournament.UpdatedAtUtc = now;
         entry.Tournament.Version = Guid.NewGuid().ToByteArray();
+        var notifications = await QueueTournamentInvitationOutcomesAsync(
+            invalidatedInvitations, TournamentInvitationStatus.Invalidated);
         await db.SaveChangesAsync();
+        await PublishTournamentNotificationsAsync(notifications, tournamentId);
         return ServiceResult.Success();
     }
 
@@ -1661,7 +1745,123 @@ public class TournamentService(AppDbContext db)
         throw new InvalidOperationException("無法產生唯一參賽編號。");
     }
 
-    private async Task InvalidatePendingTournamentInvitationsAsync(
+    public async Task<ServiceResult> InviteTeamMemberAsync(int tournamentId, int entryId, int representativeUserId, int invitedUserId)
+    {
+        var account = await db.Users.AsNoTracking().Where(x => x.Id == invitedUserId).Select(x => x.Account).SingleOrDefaultAsync();
+        return account is null
+            ? ServiceResult.Failure("找不到指定玩家。")
+            : await InviteTeamMemberAsync(tournamentId, entryId, representativeUserId, account);
+    }
+
+    private async Task<UserNotification?> QueueTournamentInvitationCreatedAsync(
+        TournamentInvitation invitation,
+        string tournamentName,
+        UserNotificationActionType actionType)
+    {
+        if (notificationService is null) return null;
+        var inviterName = await db.Users.AsNoTracking().Where(x => x.Id == invitation.InvitedByUserId)
+            .Select(x => x.DisplayName).SingleAsync();
+        var title = invitation.Type switch
+        {
+            TournamentInvitationType.Tournament => "賽事參賽邀請",
+            TournamentInvitationType.Team => "賽事隊伍邀請",
+            _ => "隊伍代表人轉讓"
+        };
+        var message = invitation.Type switch
+        {
+            TournamentInvitationType.Tournament => $"{inviterName} 邀請你參加「{tournamentName}」。",
+            TournamentInvitationType.Team => $"{inviterName} 邀請你加入「{tournamentName}」的隊伍。",
+            _ => $"{inviterName} 邀請你接任「{tournamentName}」的隊伍代表人。"
+        };
+        return await notificationService.QueueAsync(new NotificationDraft(
+            invitation.InvitedUserId,
+            UserNotificationKind.Invitation,
+            title,
+            message,
+            $"/Tournaments/Details/{invitation.TournamentId}",
+            "TournamentInvitation",
+            invitation.TournamentId,
+            actionType,
+            invitation.Id,
+            $"tournament-invitation:{invitation.Id}"));
+    }
+
+    private async Task<UserNotification?> QueueTournamentInvitationOutcomeAsync(TournamentInvitation invitation, bool accepted)
+        => await QueueTournamentInvitationOutcomeAsync(
+            invitation,
+            accepted ? TournamentInvitationStatus.Accepted : TournamentInvitationStatus.Declined);
+
+    private async Task<UserNotification?> QueueTournamentInvitationOutcomeAsync(
+        TournamentInvitation invitation,
+        TournamentInvitationStatus finalStatus)
+    {
+        if (notificationService is null) return null;
+        await notificationService.ResolveByDedupeKeyAsync(invitation.InvitedUserId, $"tournament-invitation:{invitation.Id}");
+        var invitedName = invitation.InvitedUser?.DisplayName ?? await db.Users.AsNoTracking()
+            .Where(x => x.Id == invitation.InvitedUserId).Select(x => x.DisplayName).SingleAsync();
+        var (kind, title, outcome) = finalStatus switch
+        {
+            TournamentInvitationStatus.Accepted => (UserNotificationKind.InvitationAccepted, "賽事邀請已接受", "接受"),
+            TournamentInvitationStatus.Declined => (UserNotificationKind.InvitationDeclined, "賽事邀請被拒絕", "拒絕"),
+            TournamentInvitationStatus.Cancelled => (UserNotificationKind.InvitationCancelled, "賽事邀請已取消", "取消"),
+            TournamentInvitationStatus.Invalidated => (UserNotificationKind.InvitationInvalidated, "賽事邀請已失效", "無法再處理"),
+            _ => throw new ArgumentOutOfRangeException(nameof(finalStatus), "只有終止狀態能建立邀請結果通知。")
+        };
+        return await notificationService.QueueAsync(new NotificationDraft(
+            invitation.InvitedByUserId,
+            kind,
+            title,
+            $"你發給 {invitedName} 的邀請已{outcome}。",
+            $"/Tournaments/Details/{invitation.TournamentId}",
+            "TournamentInvitation",
+            invitation.TournamentId,
+            DedupeKey: $"tournament-invitation-outcome:{invitation.Id}:{finalStatus}"));
+    }
+
+    private async Task<List<UserNotification>> QueueTournamentInvitationOutcomesAsync(
+        IEnumerable<TournamentInvitation> invitations,
+        TournamentInvitationStatus finalStatus)
+    {
+        var notifications = new List<UserNotification>();
+        foreach (var invitation in invitations.GroupBy(x => x.Id).Select(x => x.First()))
+        {
+            var notification = await QueueTournamentInvitationOutcomeAsync(invitation, finalStatus);
+            if (notification is not null) notifications.Add(notification);
+        }
+        return notifications;
+    }
+
+    private async Task PublishTournamentNotificationAsync(UserNotification? notification, int tournamentId)
+    {
+        if (notification is not null) await notificationService!.PublishQueuedAsync(notification);
+        await PublishTournamentStateAsync(tournamentId);
+    }
+
+    private async Task PublishTournamentNotificationsAsync(IEnumerable<UserNotification> notifications, int tournamentId)
+    {
+        foreach (var notification in notifications) await notificationService!.PublishQueuedAsync(notification);
+        await PublishTournamentStateAsync(tournamentId);
+    }
+
+    private async Task PublishTournamentStateAsync(int tournamentId)
+    {
+        if (realtimePublisher is null) return;
+        var userIds = await db.TournamentEntryMembers.AsNoTracking().Where(x => x.TournamentId == tournamentId)
+            .Select(x => x.UserId).ToListAsync();
+        userIds.AddRange(await db.TournamentEntries.AsNoTracking().Where(x => x.TournamentId == tournamentId && x.IndividualUserId != null)
+            .Select(x => x.IndividualUserId!.Value).ToListAsync());
+        userIds.AddRange(await db.TournamentInvitations.AsNoTracking().Where(x => x.TournamentId == tournamentId)
+            .Select(x => x.InvitedUserId).ToListAsync());
+        var organizerId = await db.Tournaments.AsNoTracking().Where(x => x.Id == tournamentId).Select(x => x.OrganizerUserId).SingleAsync();
+        userIds.Add(organizerId);
+        await realtimePublisher.PublishUsersAsync(userIds, "tournament-state", new
+        {
+            tournamentId,
+            targetUrl = $"/Tournaments/Details/{tournamentId}"
+        });
+    }
+
+    private async Task<List<TournamentInvitation>> InvalidatePendingTournamentInvitationsAsync(
         int tournamentId,
         DateTime invalidatedAtUtc,
         int? invitedUserId = null,
@@ -1675,14 +1875,16 @@ public class TournamentService(AppDbContext db)
             query = query.Where(x => x.InvitedUserId == userId);
         if (exceptInvitationId is int invitationId)
             query = query.Where(x => x.Id != invitationId);
-        foreach (var invitation in await query.ToListAsync())
+        var invitations = await query.ToListAsync();
+        foreach (var invitation in invitations)
         {
             invitation.Status = TournamentInvitationStatus.Invalidated;
             invitation.InvalidatedAtUtc = invalidatedAtUtc;
         }
+        return invitations;
     }
 
-    private async Task InvalidatePendingInvitationsAsync(int tournamentId, DateTime invalidatedAtUtc)
+    private async Task<List<TournamentInvitation>> InvalidatePendingInvitationsAsync(int tournamentId, DateTime invalidatedAtUtc)
     {
         var invitations = await db.TournamentInvitations.Where(x =>
             x.TournamentId == tournamentId &&
@@ -1692,6 +1894,7 @@ public class TournamentService(AppDbContext db)
             invitation.Status = TournamentInvitationStatus.Invalidated;
             invitation.InvalidatedAtUtc = invalidatedAtUtc;
         }
+        return invitations;
     }
 
     private static TournamentRegistrationStage GetReopenedRegistrationStage(Tournament tournament)

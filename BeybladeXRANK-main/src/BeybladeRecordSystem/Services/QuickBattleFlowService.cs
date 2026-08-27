@@ -1,6 +1,7 @@
 using BeybladeRecordSystem.Data;
 using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
+using BeybladeRecordSystem.Realtime;
 using Microsoft.EntityFrameworkCore;
 
 namespace BeybladeRecordSystem.Services;
@@ -35,7 +36,10 @@ public record QuickBattleReorderWorkspace(
     IReadOnlyList<BattleLineupSelection> CurrentPrivateSelections,
     bool CurrentUserSubmitted);
 
-public class QuickBattleFlowService(AppDbContext db)
+public class QuickBattleFlowService(
+    AppDbContext db,
+    NotificationService? notificationService = null,
+    IRealtimePublisher? realtimePublisher = null)
 {
     public async Task<QuickBattleInvitationList> GetInvitationsAsync(int userId)
     {
@@ -94,7 +98,9 @@ public class QuickBattleFlowService(AppDbContext db)
     {
         if (inviterUserId == inviteeUserId)
             return ServiceResult<QuickBattleInvitation>.Failure("不可邀請自己進行對戰。");
-        if (!await db.Users.AnyAsync(x => x.Id == inviterUserId) || !await db.Users.AnyAsync(x => x.Id == inviteeUserId))
+        var inviter = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == inviterUserId);
+        var inviteeExists = await db.Users.AnyAsync(x => x.Id == inviteeUserId);
+        if (inviter is null || !inviteeExists)
             return ServiceResult<QuickBattleInvitation>.Failure("找不到指定的玩家。");
         if (await db.QuickBattleInvitations.AnyAsync(x =>
                 (x.InviterUserId == inviterUserId && x.InviteeUserId == inviteeUserId) ||
@@ -108,15 +114,34 @@ public class QuickBattleFlowService(AppDbContext db)
             CreatedAtUtc = DateTime.UtcNow,
             Version = Guid.NewGuid().ToByteArray()
         };
+        await using var transaction = await db.Database.BeginTransactionAsync();
         db.QuickBattleInvitations.Add(invitation);
         await db.SaveChangesAsync();
+        UserNotification? notification = null;
+        if (notificationService is not null)
+        {
+            notification = await notificationService.QueueAsync(new NotificationDraft(
+                inviteeUserId,
+                UserNotificationKind.Invitation,
+                "快速對戰邀請",
+                $"{inviter.DisplayName} 邀請你進行快速對戰。",
+                "/Battles/Invitations",
+                "QuickBattleInvitation",
+                invitation.Id,
+                UserNotificationActionType.AcceptQuickBattleInvitation,
+                invitation.Id,
+                $"quick-invitation:{invitation.Id}"));
+            await db.SaveChangesAsync();
+        }
+        await transaction.CommitAsync();
+        if (notification is not null) await notificationService!.PublishQueuedAsync(notification);
         return ServiceResult<QuickBattleInvitation>.Success(invitation);
     }
 
     public async Task<ServiceResult<int>> AcceptInvitationAsync(int invitationId, int inviteeUserId)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var invitation = await db.QuickBattleInvitations
+        var invitation = await db.QuickBattleInvitations.Include(x => x.InviteeUser)
             .SingleOrDefaultAsync(x => x.Id == invitationId);
         if (invitation is null)
             return ServiceResult<int>.Failure("邀請已不存在或已被處理。");
@@ -139,29 +164,82 @@ public class QuickBattleFlowService(AppDbContext db)
         db.Battles.Add(battle);
         db.QuickBattleInvitations.Remove(invitation);
         await db.SaveChangesAsync();
+        UserNotification? outcome = null;
+        if (notificationService is not null)
+        {
+            await notificationService.ResolveByDedupeKeyAsync(inviteeUserId, $"quick-invitation:{invitation.Id}");
+            outcome = await notificationService.QueueAsync(new NotificationDraft(
+                invitation.InviterUserId,
+                UserNotificationKind.InvitationAccepted,
+                "快速對戰邀請已接受",
+                $"{invitation.InviteeUser.DisplayName} 已接受邀請，請提交陣容。",
+                $"/Battles/Setup/{battle.Id}",
+                "Battle",
+                battle.Id,
+                DedupeKey: $"quick-accepted:{invitation.Id}"));
+            await db.SaveChangesAsync();
+        }
         await transaction.CommitAsync();
+        if (outcome is not null) await notificationService!.PublishQueuedAsync(outcome);
+        await PublishBattleStateAsync(battle);
         return ServiceResult<int>.Success(battle.Id);
     }
 
     public async Task<ServiceResult> DeclineInvitationAsync(int invitationId, int inviteeUserId)
     {
-        var invitation = await db.QuickBattleInvitations.SingleOrDefaultAsync(x => x.Id == invitationId);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var invitation = await db.QuickBattleInvitations.Include(x => x.InviteeUser).SingleOrDefaultAsync(x => x.Id == invitationId);
         if (invitation is null) return ServiceResult.Success();
         if (invitation.InviteeUserId != inviteeUserId)
             return ServiceResult.Failure("只有受邀玩家可以拒絕這筆邀請。");
         db.QuickBattleInvitations.Remove(invitation);
         await db.SaveChangesAsync();
+        UserNotification? outcome = null;
+        if (notificationService is not null)
+        {
+            await notificationService.ResolveByDedupeKeyAsync(inviteeUserId, $"quick-invitation:{invitation.Id}");
+            outcome = await notificationService.QueueAsync(new NotificationDraft(
+                invitation.InviterUserId,
+                UserNotificationKind.InvitationDeclined,
+                "快速對戰邀請被拒絕",
+                $"{invitation.InviteeUser.DisplayName} 已拒絕你的快速對戰邀請。",
+                "/Battles/Invitations",
+                "QuickBattleInvitation",
+                invitation.Id,
+                DedupeKey: $"quick-declined:{invitation.Id}"));
+            await db.SaveChangesAsync();
+        }
+        await transaction.CommitAsync();
+        if (outcome is not null) await notificationService!.PublishQueuedAsync(outcome);
         return ServiceResult.Success();
     }
 
     public async Task<ServiceResult> WithdrawInvitationAsync(int invitationId, int inviterUserId)
     {
-        var invitation = await db.QuickBattleInvitations.SingleOrDefaultAsync(x => x.Id == invitationId);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var invitation = await db.QuickBattleInvitations.Include(x => x.InviterUser).SingleOrDefaultAsync(x => x.Id == invitationId);
         if (invitation is null) return ServiceResult.Success();
         if (invitation.InviterUserId != inviterUserId)
             return ServiceResult.Failure("只有邀請發起人可以撤回這筆邀請。");
         db.QuickBattleInvitations.Remove(invitation);
         await db.SaveChangesAsync();
+        UserNotification? outcome = null;
+        if (notificationService is not null)
+        {
+            await notificationService.ResolveByDedupeKeyAsync(invitation.InviteeUserId, $"quick-invitation:{invitation.Id}");
+            outcome = await notificationService.QueueAsync(new NotificationDraft(
+                invitation.InviteeUserId,
+                UserNotificationKind.InvitationCancelled,
+                "快速對戰邀請已撤回",
+                $"{invitation.InviterUser.DisplayName} 已撤回快速對戰邀請。",
+                "/Battles/Invitations",
+                "QuickBattleInvitation",
+                invitation.Id,
+                DedupeKey: $"quick-withdrawn:{invitation.Id}"));
+            await db.SaveChangesAsync();
+        }
+        await transaction.CommitAsync();
+        if (outcome is not null) await notificationService!.PublishQueuedAsync(outcome);
         return ServiceResult.Success();
     }
 
@@ -248,6 +326,7 @@ public class QuickBattleFlowService(AppDbContext db)
             await db.SaveChangesAsync();
         }
         await transaction.CommitAsync();
+        await PublishBattleStateAsync(battle);
         return ServiceResult.Success();
     }
 
@@ -286,6 +365,7 @@ public class QuickBattleFlowService(AppDbContext db)
             await db.SaveChangesAsync();
         }
         await transaction.CommitAsync();
+        await PublishBattleStateAsync(battle);
         return ServiceResult.Success();
     }
 
@@ -316,9 +396,9 @@ public class QuickBattleFlowService(AppDbContext db)
                     .SetProperty(x => x.PlayerBEditRequestUsed, true)
                     .SetProperty(x => x.PendingLineupEditRequestedByUserId, userId)
                     .SetProperty(x => x.Version, Guid.NewGuid().ToByteArray()));
-        return updated == 1
-            ? ServiceResult.Success()
-            : ServiceResult.Failure("陣容狀態已更新，請重新整理後再操作。");
+        if (updated != 1) return ServiceResult.Failure("陣容狀態已更新，請重新整理後再操作。");
+        await PublishBattleStateByIdAsync(battleId);
+        return ServiceResult.Success();
     }
 
     public async Task<ServiceResult> RespondLineupEditAsync(int battleId, int userId, bool accept)
@@ -349,9 +429,9 @@ public class QuickBattleFlowService(AppDbContext db)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.PendingLineupEditRequestedByUserId, (int?)null)
                     .SetProperty(x => x.Version, Guid.NewGuid().ToByteArray()));
-        return updated == 1
-            ? ServiceResult.Success()
-            : ServiceResult.Failure("重新編輯請求已被處理，請重新整理。");
+        if (updated != 1) return ServiceResult.Failure("重新編輯請求已被處理，請重新整理。");
+        await PublishBattleStateByIdAsync(battleId);
+        return ServiceResult.Success();
     }
 
     public async Task<QuickBattleReorderWorkspace?> GetReorderWorkspaceAsync(int battleId, int userId)
@@ -453,7 +533,32 @@ public class QuickBattleFlowService(AppDbContext db)
             await db.SaveChangesAsync();
         }
         await transaction.CommitAsync();
+        await PublishBattleStateAsync(battle);
         return ServiceResult.Success();
+    }
+
+    private async Task PublishBattleStateByIdAsync(int battleId)
+    {
+        if (realtimePublisher is null) return;
+        var battle = await db.Battles.AsNoTracking().SingleAsync(x => x.Id == battleId);
+        await PublishBattleStateAsync(battle);
+    }
+
+    private Task PublishBattleStateAsync(Battle battle)
+    {
+        if (realtimePublisher is null || battle.PlayerAId is null || battle.PlayerBId is null) return Task.CompletedTask;
+        var targetUrl = battle.Status switch
+        {
+            BattleStatus.LineupSelection or BattleStatus.LineupReview or BattleStatus.LineupLocked or BattleStatus.SideSelection => $"/Battles/Setup/{battle.Id}",
+            BattleStatus.ReorderSelection => $"/Battles/Reorder/{battle.Id}",
+            BattleStatus.InProgress or BattleStatus.VictoryPendingCompletion => $"/Battles/Battle/{battle.Id}",
+            BattleStatus.Completed => $"/Battles/Details/{battle.Id}",
+            _ => "/Battles/Invitations"
+        };
+        return realtimePublisher.PublishUsersAsync(
+            [battle.PlayerAId.Value, battle.PlayerBId.Value],
+            "battle-state",
+            new { battleId = battle.Id, status = battle.Status.ToString(), targetUrl });
     }
 
     private IQueryable<Battle> QuickBattleQuery() => db.Battles

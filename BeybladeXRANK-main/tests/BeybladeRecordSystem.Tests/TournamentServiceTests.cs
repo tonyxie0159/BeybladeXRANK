@@ -253,34 +253,28 @@ public class TournamentServiceTests
     }
 
     [Fact]
-    public async Task ParticipantInvitation_RequiresOrganizerAndExactUnambiguousPlayerLookup()
+    public async Task ParticipantInvitation_RequiresOrganizerAndUsesServerValidatedUserId()
     {
         await using var fixture = await TestDatabase.CreateAsync();
         var organizer = await fixture.AddUserAsync("invite-organizer");
         var outsider = await fixture.AddUserAsync("invite-outsider");
         var accountTarget = await fixture.AddUserAsync("account-target");
         var displayTarget = await fixture.AddUserAsync("display-target");
-        var ambiguousA = await fixture.AddUserAsync("ambiguous-a");
-        var ambiguousB = await fixture.AddUserAsync("ambiguous-b");
         displayTarget.DisplayName = "Unique Player";
-        ambiguousA.DisplayName = "Same Player";
-        ambiguousB.DisplayName = "Same Player";
         await fixture.Db.SaveChangesAsync();
         var tournament = await fixture.CreateIndividualTournamentAsync(organizer.Id, 8);
         var teamTournament = await fixture.CreateTeamTournamentAsync(organizer.Id);
 
         Assert.False((await fixture.Service.InviteParticipantAsync(
-            tournament.Id, outsider.Id, accountTarget.Account)).Succeeded);
-        Assert.False((await fixture.Service.InviteParticipantAsync(
-            tournament.Id, organizer.Id, "Same Player")).Succeeded);
+            tournament.Id, outsider.Id, accountTarget.Id)).Succeeded);
         Assert.True((await fixture.Service.InviteParticipantAsync(
-            tournament.Id, organizer.Id, accountTarget.Account)).Succeeded);
+            tournament.Id, organizer.Id, accountTarget.Id)).Succeeded);
         Assert.True((await fixture.Service.InviteParticipantAsync(
-            tournament.Id, organizer.Id, "Unique Player")).Succeeded);
+            tournament.Id, organizer.Id, displayTarget.Id)).Succeeded);
         Assert.False((await fixture.Service.InviteParticipantAsync(
-            tournament.Id, organizer.Id, accountTarget.Account)).Succeeded);
+            tournament.Id, organizer.Id, accountTarget.Id)).Succeeded);
         Assert.False((await fixture.Service.InviteParticipantAsync(
-            teamTournament.Id, organizer.Id, outsider.Account)).Succeeded);
+            teamTournament.Id, organizer.Id, outsider.Id)).Succeeded);
 
         fixture.Db.ChangeTracker.Clear();
         var invitations = await fixture.Db.TournamentInvitations
@@ -978,7 +972,7 @@ public class TournamentServiceTests
         var finalStandings = await new TournamentStandingsService(fixture.Db).GetStandingsAsync(tournament.Id);
         Assert.Equal([1, 2, 2], finalStandings.Select(x => x.Rank));
         Assert.Equal(TournamentStandingPlacement.Champion, finalStandings[0].Placement);
-        Assert.Equal(6, finalStandings.Sum(x => x.Wins));
+        Assert.Equal(3, finalStandings.Sum(x => x.Wins));
     }
 
     [Fact]
@@ -1037,7 +1031,7 @@ public class TournamentServiceTests
         Assert.Empty(await fixture.Db.Battles.Where(x => x.TournamentMatch!.TournamentId == tournament.Id).ToListAsync());
         var standings = await new TournamentStandingsService(fixture.Db).GetStandingsAsync(tournament.Id);
         Assert.Equal(5, standings.Count);
-        Assert.Equal(tournament.Matches.Count, standings.Sum(x => x.Wins));
+        Assert.Equal(tournament.Matches.Count(x => !x.IsBye), standings.Sum(x => x.Wins));
         Assert.All(standings, x => Assert.Equal(0, x.ScoreDifference));
     }
 
@@ -2063,7 +2057,7 @@ public class TournamentServiceTests
             .Where(x => x.BattleRound.BattleId == revisedSource.BattleId && x.BattleRound.RoundNo == 3)
             .SingleAsync(x => x.EventType == BattleRoundEventType.BattleResult);
         Assert.False(invalidatedLaterEvent.IsEffective);
-        Assert.Equal(BattleRoundEventInvalidationReason.VictoryThresholdReached, invalidatedLaterEvent.InvalidationReason);
+        Assert.Equal(BattleRoundEventInvalidationReason.SupersededByEarlierRoundRevision, invalidatedLaterEvent.InvalidationReason);
 
         final = await fixture.Db.TournamentMatches.AsSplitQuery()
             .Include(x => x.Participants)

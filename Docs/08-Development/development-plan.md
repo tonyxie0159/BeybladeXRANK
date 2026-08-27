@@ -2,6 +2,8 @@
 
 本文件只追蹤「有效規格與目前實作的差距」。不再使用已完成的兩天建置階段，也不保留舊版 Battle Setup 作為替代流程。
 
+第一次封測修正的需求、執行證據與實機清單記錄於 `../../BeybladeXRANK-main/Docs/08-Development/first-closed-beta-experience-fixes.md`；若有產品規則差異，仍以本文件集及 `Docs/README.md` 的優先順序為準。
+
 ## 已建立的基準
 
 - .NET 10 Razor Pages、EF Core SQLite、Cookie Authentication。
@@ -13,7 +15,7 @@
 - Tournament 出賽、Lineup、推進、取消、Void／Reopen 與下游保護。
 - 來源分區、B／X Side、個人／陀螺／對手／歷史統計。
 - runtime data directory、Dockerfile、compose 與 Cloudflare 說明。
-- 138 項 Domain／Service／Persistence／PageModel 測試通過。
+- 155 項 Domain／Service／Persistence／HTTP／SignalR 整合測試通過。
 
 上述代表已有自動證據，不代表 UI、實機部署或下列差距已驗收。
 
@@ -52,9 +54,9 @@ Regression tests：
 
 ### 2A 主辦方 Tournament invitation（已完成）
 
-完成證據：精確 Account／DisplayName 搜尋、Tournament invitation 狀態歷史、接受時建立或恢復唯一 Entry、容量失效、所有權與 invitation WaitingForMe 測試均已完成。
+完成證據：唯一 DisplayName 模糊搜尋、Tournament invitation 狀態歷史與結果通知、接受時建立或恢復唯一 Entry、容量失效、所有權與 invitation WaitingForMe 測試均已完成。
 
-- 依 Account／完整 DisplayName 精確搜尋。
+- 依唯一 DisplayName 模糊搜尋，只傳 UserId 並不公開 Account。
 - 建立 Type = Tournament invitation，保留 Pending／Accepted／Declined／Invalidated。
 - 接受時才建立有效 Entry，並套用容量、唯一 Entry 與 concurrency 規則。
 - WaitingForMe 能看見並處理。
@@ -89,7 +91,7 @@ Regression tests：
 
 建議 PR：tournament-no-show-and-action-queue。
 
-## Phase 4：公開 Tournament read model 與 polling（已完成）
+## Phase 4：公開 Tournament read model 與同步備援（已完成）
 
 完成證據：spectator 公開資料與 private workspace 邊界、私密 submission 公開時機、完成結果／Side／比分／實際 Lineup、Cancelled 保留資料，以及 List／Details／Match GET-only polling 不修改狀態測試均已完成。
 
@@ -97,7 +99,7 @@ Regression tests：
 - 顯示完整賽程、Entry、勝方、比分、目前 Match、實際玩家與已公開陀螺。
 - Cancelled Tournament 保留取消前合法完成資料。
 - Lineup 未全部提交前不外洩任何對手或觀眾不可見資料。
-- List 低頻率 polling；Details／current Match polling 並保留手動刷新。
+- List／Details／current Match 使用低頻唯讀 polling 與手動刷新作為 SignalR 斷線備援。
 
 Regression tests：
 
@@ -133,13 +135,17 @@ Regression tests：
 - 再以多帳號人工驗收快速對戰及 Tournament 的私密 Lineup、Side、polling 與完成流程。
 - 補 WebApplicationFactory 或等效的 authentication、authorization、anti-forgery 與 private/public data integration tests。
 
+已完成的自動證據：登入／註冊錯誤後按鈕恢復、帳號與玩家名稱正規化唯一性、全站通知鈴鐺／六秒提示、SignalR Cookie 驗證即時事件、通知防重複、快速邀請與賽事邀請結果通知、手機版快速對戰計分板、中文賽制／狀態、交易式逐局完成、較早局修訂使後續局失效，以及重新排列預設順序。
+
+仍需兩個獨立實機登入工作階段驗收：背景／休眠後重連、即時導頁、觸控可讀性、完整快速與賽事多帳號流程。自動化瀏覽器只有單一 Cookie 工作階段，不能取代這項實機證據。
+
 建議 PR：responsive-ui-and-browser-acceptance。
 
 ## Phase 7：併發與壓力回歸（依產品決策延後）
 
 - 使用兩個獨立 DbContext 驗證最後名額並行報名。
 - 補完成 Round／Battle／Match 重複 HTTP POST 的 integration test。
-- 規劃容量、長時間 polling 與高頻寫入壓力測試；在 UI／UX 與單一使用者完整流程驗收前不阻擋目前階段。
+- 規劃容量、長時間 SignalR／polling 與高頻寫入壓力測試；在 UI／UX 與單一使用者完整流程驗收前不阻擋目前階段。
 
 建議 PR：concurrency-and-load-regression-tests。
 

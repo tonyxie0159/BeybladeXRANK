@@ -11,7 +11,7 @@
 | Burst | 爆裂勝利 | 2 |
 | Extreme | 極限勝利 | 3 |
 
-Client 只能提交 WinnerPlayerId 與 ResultType 的操作意圖。Server 必須驗證操作者、Battle、Round、參賽玩家及目前狀態，並由固定 mapping 決定 ScoreAwarded；Client 不可提交任意 Score、整場比分或勝方。
+Client 只能提交 WinnerPlayerId 與 ResultType 的操作意圖。Server 必須驗證操作者、Battle、Round、參賽玩家及目前狀態，並在單一交易決定 ScoreAwarded、建立事件、完成 Round、重算比分及建立合法的下一 Round；Client 不可提交任意 Score、整場比分或勝方。
 
 ## 發射失誤
 
@@ -53,7 +53,7 @@ A 的龍騎士對 B 的霸王：
 1. A LaunchFault。
 2. A 再次 LaunchFault，建立 B +1 的 LaunchFaultPenalty，A fault 歸零。
 3. A 以 SpinFinish 得 1。
-4. 裁判完成 Round。
+4. Server 在記錄 SpinFinish 的同一交易完成 Round。
 
 此 Round：
 
@@ -65,7 +65,7 @@ A 的龍騎士對 B 的霸王：
 ## Revision 重播
 
 - 修改指定 Round 時，以新 BattleResult 取代舊有效結果並留下 Revision。
-- 從最早受影響事件依序重算所有 Round、比分與狀態。
-- 首次達 ScoreToWin 後的事件標記為 `VictoryThresholdReached` 並失效。
-- 若後續 Revision 使門檻消失，先前只因門檻而失效的事件可按時間順序重新參與重播。
+- 修改較早 Round 時，所有後續 Round 及 Event 保存原始資料並標記為 `EarlierRoundRevision` 失效，不參與比分或統計。
+- 從修訂結果重新計算比分；未達門檻時從下一站位建立新 Round，已達門檻時進入 `VictoryPendingCompletion`。
+- 首次達 ScoreToWin 後、不屬於較早局修訂截斷的事件標記為 `VictoryThresholdReached` 並失效。
 - 棄權、取消或撤銷造成的失效使用不同 InvalidationReason，不得被一般 Revision 恢復。

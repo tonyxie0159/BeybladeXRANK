@@ -3,19 +3,19 @@
 ## 技術與部署邊界
 
 - .NET 10 ASP.NET Core Razor Pages
-- Bootstrap 與必要的 Vanilla JavaScript
+- Bootstrap、Vanilla JavaScript 與 ASP.NET Core SignalR client
 - EF Core + SQLite
 - xUnit
 - Docker 單一 Web container
 - 主機側 Cloudflare Tunnel
 
-不建立 SPA、獨立 REST API 專案、獨立 DB container、WebSocket、SignalR、Redis 或微服務。
+不建立 SPA、獨立 REST API 專案、獨立 DB container、Redis 或微服務。使用 ASP.NET Core SignalR 作為站內即時狀態提示，並保留低頻唯讀同步備援。
 
 ## 單體分層
 
 ```text
 Browser
-  |
+  | Razor Pages + /hubs/realtime
 Razor Pages / Cookie Authentication
   |
 Application Services
@@ -44,11 +44,12 @@ Razor PageModel 只負責：
 - Model binding、基本輸入格式驗證與 anti-forgery。
 - 呼叫 Application Service。
 - 將 Service 結果轉為頁面、導向或錯誤訊息。
-- 低頻率 polling 與手動刷新；不得在 JavaScript 計分或推進賽程。
+- SignalR 狀態事件、重連同步與低頻唯讀 polling 備援；不得在 JavaScript 計分或推進賽程。
 
 ### Application Services
 
 - `AuthService`：註冊、密碼驗證、DisplayName。
+- `NotificationService`：建立防重複站內通知、未讀摘要、安全動作與讀取狀態。
 - `BeybladeService`：目前使用者的 Beyblade CRUD 與軟刪除。
 - `QuickBattleFlowService`：快速邀請、雙方私密 Lineup、確認、編輯請求、私密重排及 active battle 返回查詢。
 - `BattleService`：Side 指定、開始、事件記錄、Round 完成、明確結束、快速棄權／取消、Revision 與授權讀取。
@@ -75,7 +76,7 @@ Razor PageModel 只負責：
 
 ## 所有權與隱私邊界
 
-- Account 不公開；只有需要邀請的精確搜尋可使用 Account／完整 DisplayName。
+- Account 不公開；玩家搜尋只依唯一 DisplayName 模糊搜尋並只回傳 UserId 與 DisplayName。
 - 使用者只能管理自己的 Beyblade 與私密 Lineup。
 - 雙方／全體必要玩家都提交前，不可向對手或觀眾公開陣容。
 - 公開 Tournament 詳情只顯示規範允許的 DisplayName、Entry、已公開 Lineup、實際選手、比分與賽程。
@@ -89,10 +90,12 @@ Razor PageModel 只負責：
 - 接受快速邀請並建立 Battle。
 - 最後名額報名、整隊正式報名與系統配隊。
 - 產生／鎖定賽程與啟動首場。
-- 記分、完成 Round、完成 Battle、推進 Match 與建立下一場通知。
+- 記錄結果並完成 Round、完成 Battle、推進 Match 與建立下一場通知。
 - 快速對戰硬刪除、Tournament 取消、棄權、Void／Reopen 及 Revision。
 
 重複請求必須是可拒絕或 idempotent，不得重複計分、晉級、通知或統計。
+
+業務資料與 `UserNotification` 在同一資料庫交易內保存；只有交易成功提交後才發布 SignalR 事件。Hub 只依已驗證的 UserId 加入私人群組，Client 事件不能直接指定計分、下一場或任意伺服器動作。
 
 ## 專案結構
 

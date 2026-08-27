@@ -9,7 +9,7 @@
 </header>
 <form method="get" class="toolbar">
     <div class="col-sm-8 col-md-5">
-        <select asp-for="Filter" asp-items="Html.GetEnumSelectList<TournamentListFilter>()" class="form-select"></select>
+        <select asp-for="Filter" class="form-select"><option value="All">全部賽事</option><option value="WaitingForMe">等待我處理</option><option value="RegistrationOpen">開放報名</option><option value="InProgress">進行中</option><option value="Completed">已完成</option><option value="Cancelled">已取消</option><option value="Participating">我參加的</option><option value="Hosted">我主辦的</option></select>
     </div>
     <div class="col-auto"><button class="btn btn-outline-primary">套用篩選</button></div>
 </form>
@@ -21,26 +21,13 @@
 @foreach (var item in Model.Result.Items)
 {
     var modeLabel = item.Mode == TournamentMode.Individual ? "個人賽" : "團體賽";
-    var registrationLabel = item.RegistrationMode switch
-    {
-        TournamentRegistrationMode.Individual => "個人報名",
-        TournamentRegistrationMode.CompleteTeam => "整隊報名",
-        TournamentRegistrationMode.SystemAssignedTeam => "系統配隊",
-        _ => item.RegistrationMode.ToString()
-    };
-    var formatLabel = item.Format switch
-    {
-        TournamentFormat.SingleElimination => "單淘汰",
-        TournamentFormat.DoubleElimination => "雙敗淘汰",
-        TournamentFormat.RoundRobin => "單循環",
-        TournamentFormat.Swiss => "瑞士輪",
-        _ => item.Format.ToString()
-    };
+    var registrationLabel = TournamentDisplay.Label(item.RegistrationMode);
+    var formatLabel = TournamentDisplay.Label(item.Format);
     <div class="col-12">
         <article class="card"><div class="card-body">
             <div class="d-flex flex-wrap justify-content-between gap-2">
                 <div><h2 class="h5 mb-1">@item.Name</h2><div class="text-muted">主辦：@item.OrganizerDisplayName</div></div>
-                <div><span class="badge text-bg-primary">@item.Status</span> <span class="badge text-bg-secondary">@item.RegistrationStage</span></div>
+                <div><span class="badge @TournamentDisplay.BadgeClass(item.Status)">@TournamentDisplay.Label(item.Status)</span> <span class="badge @TournamentDisplay.BadgeClass(item.RegistrationStage)">@TournamentDisplay.Label(item.RegistrationStage)</span></div>
             </div>
             <div class="d-flex flex-wrap gap-1 my-2">
                 <span class="badge text-bg-light">@modeLabel</span>
@@ -93,7 +80,7 @@
             const payload = await response.json();
             if (payload.token && payload.token !== initialToken) window.location.reload();
         } catch { }
-    }, 20000);
+    }, 60000);
 })();
 </script>
 }

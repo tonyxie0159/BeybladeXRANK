@@ -5,19 +5,21 @@
 - [x]：目前已有對應自動測試，且最近一次完整測試通過。
 - [ ]：有效需求仍待實作、補自動測試或完成指定人工驗收。
 
-最近一次基準（2026-08-20）：
+最近一次基準（2026-08-23）：
 
 ```powershell
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：138 passed、0 failed、0 skipped。現有測試以 Domain／Service／Persistence／PageModel 為主，不能代替完整 HTTP、瀏覽器、手機或實際部署驗收。
+結果：155 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
 
 ## 已有自動證據
 
 ### Account／Beyblade
 
 - [x] 註冊保存 PasswordHash、拒絕重複 Account 並可驗證登入。
+- [x] Account 與 DisplayName 使用 trim、英文不分大小寫的正規化唯一索引；修改 DisplayName 也套用相同規則。
+- [x] Login／Register 驗證失敗後按鈕恢復，可立即再次提交；登入後 Layout 載入通知鈴鐺、提示區與 SignalR client。
 - [x] Beyblade CRUD 限制在擁有者，Delete 採軟刪除。
 - [x] 同一 User 名稱不可重複，不同 User 可同名。
 - [x] Rename 維持同一 BeybladeId，Lineup／Round 保存 Snapshot。
@@ -51,7 +53,7 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 
 ### Tournament 資料、賽程與對局
 
-- [x] 個人賽主辦方可依 Account／唯一完整 DisplayName 發送 Tournament invitation；接受才建立／恢復 Entry，拒絕保留歷史。
+- [x] 個人賽主辦方可依唯一 DisplayName 模糊搜尋並提交 UserId 發送 Tournament invitation；接受才建立／恢復 Entry，拒絕保留歷史。
 - [x] 手動先報名、額滿或關閉報名會使不再有效的 pending invitation 進入 Invalidated。
 - [x] invitation WaitingForMe 篩選只顯示登入者待處理邀請，非受邀者不可回覆。
 - [x] 個人、整隊與系統配隊使用同一 ReopenRegistration；只限主辦方及正式開始前操作。
@@ -76,6 +78,9 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [x] 任一方尚未完成私密提交時，PublicDetails 不回傳 Battle 或 Lineup；全部物化後才同步公開 Snapshot。
 - [x] Cancelled Tournament 公開資料保留取消前完成 Match／Battle／比分，未準備完成的對局不產生公開 Battle。
 - [x] List／Details／Match polling handler 為授權後的 GET-only 最小 JSON 查詢，不修改 Tournament／Match／Battle 或重送 POST。
+- [x] 已驗證使用者可用 Cookie 連線 `/hubs/realtime` 私人群組，快速邀請寫入後立即收到通知事件。
+- [x] 指定 B／X Side 的即時事件會讓雙方留在 Setup；建立第一 Round 後才一起導向 Battle。
+- [x] 快速與賽事邀請的接受、拒絕、取消、額滿或關閉造成的失效通知具防重複鍵；通知與業務狀態同交易保存，提交後才推送。
 - [x] Tournament 取消保留完成 Round、排除當前 Event，並保存原因／報名／賽程。
 - [x] Void／Reopen 保留舊 Battle audit、排除統計並建立乾淨替代流程。
 - [x] 循環與瑞士既有 tie-break 計算可重現；Bye／Walkover 不虛構比分。
@@ -100,17 +105,19 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 
 ### P2 UI／UX 與 Web functional 證據
 
-- [ ] Register、Login、Logout、Settings 以瀏覽器完整操作。
+- [x] Register、Login 與主要登入頁 HTTP／瀏覽器基本操作；驗證失敗按鈕恢復與主要 Layout 資源已覆蓋。
+- [ ] Logout、Settings 修改唯一玩家名稱以實際瀏覽器完整操作。
 - [ ] 所有登入後主要頁面以桌面與手機尺寸通過導覽、可讀性、基本表單與水平溢出檢查。
 - [ ] 快速對戰與 Tournament 以多帳號完成主要流程。
-- [ ] 建立 Razor Pages authentication／authorization／anti-forgery integration tests。
+- [x] 建立 Razor Pages authentication／authorization／anti-forgery integration tests，並以兩個獨立 Cookie client 建立快速對戰至可計分頁。
+- [x] 首頁功能卡不顯示編號、鈴鐺位於收合導覽外；對戰紀錄只有一個返回入口，結算頁顯示勝方、最終比分及回到首頁。
 - [ ] 建立私密 Lineup 不外洩及公開 Tournament read model 的 integration tests。
 
 ### 已延後的併發與壓力證據
 
 - [ ] 使用兩個獨立 DbContext 模擬最後名額並行報名，只允許一個成功。
 - [ ] 對完成 Round／Battle／Match 的重複 HTTP POST 驗證不重複計分、晉級或通知。
-- [ ] 容量、長時間 polling 與高頻寫入壓力測試。
+- [ ] 容量、長時間 SignalR／polling 與高頻寫入壓力測試。
 
 以上項目依目前產品優先順序延後，不阻擋 UI／UX 與一般使用者功能驗收。
 

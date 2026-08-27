@@ -1,0 +1,60 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Battles.HistoryModel
+@using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Infrastructure
+@{
+    ViewData["Title"] = "對戰紀錄";
+}
+
+<header class="page-header">
+    <div><p class="eyebrow"><span></span>BATTLE HISTORY</p><h1>對戰紀錄</h1><p>有效判決、失效事件及每次修訂都會保留。</p></div>
+    <a asp-page="Battle" asp-route-id="@Model.Battle.Id" class="btn btn-primary">回到比賽</a>
+</header>
+
+@foreach (var round in Model.Battle.Rounds.OrderBy(x => x.RoundNo))
+{
+    <section class="card card-body mb-3">
+        <h2 class="h5">Round @round.RoundNo：@round.PlayerABeybladeNameSnapshot vs @round.PlayerBBeybladeNameSnapshot</h2>
+        <ul class="list-unstyled mb-0">
+            @foreach (var item in round.Events.OrderBy(x => x.EventSequence))
+            {
+                var eventLabel = item.EventType switch
+                {
+                    BattleRoundEventType.LaunchFault => "發射失誤",
+                    BattleRoundEventType.LaunchFaultPenalty => "兩次失誤判罰",
+                    _ => item.ResultType switch
+                    {
+                        ResultType.SpinFinish => "轉停勝",
+                        ResultType.KnockOut => "擊飛勝",
+                        ResultType.Burst => "爆裂勝",
+                        ResultType.Extreme => "極限勝",
+                        _ => "對局判決"
+                    }
+                };
+                var invalidation = item.InvalidationReason switch
+                {
+                    BattleRoundEventInvalidationReason.SupersededByRevision => "已由本局新判決取代",
+                    BattleRoundEventInvalidationReason.SupersededByEarlierRoundRevision => "因較早局判決修改而取消",
+                    BattleRoundEventInvalidationReason.VictoryThresholdReached => "已超過勝利門檻",
+                    BattleRoundEventInvalidationReason.BattleTerminated => "對戰已終止",
+                    _ => null
+                };
+                <li class="history-event @(item.IsEffective ? "" : "is-invalid")">
+                    <span>@eventLabel@if (item.ScoreAwarded > 0) { <text>（+@item.ScoreAwarded）</text> }</span>
+                    @if (invalidation is not null) { <small>@invalidation</small> }
+                </li>
+            }
+        </ul>
+        @foreach (var revision in round.Revisions.OrderByDescending(x => x.ChangedAtUtc))
+        {
+            <div class="revision-note"><strong>判決修改</strong><span>@revision.Reason</span><small>@revision.ChangedAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm") · @revision.ChangedByUser.DisplayName</small></div>
+        }
+    </section>
+}
+
+<div class="page-actions">
+    @if (Model.Battle.CreatedByUserId == User.GetRequiredUserId())
+    {
+        <a asp-page="Revise" asp-route-id="@Model.Battle.Id" class="btn btn-outline-warning">判決修改</a>
+    }
+</div>

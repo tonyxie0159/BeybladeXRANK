@@ -9,7 +9,7 @@
 - 好友、聊天、社群、公開玩家目錄或永久社群 Team。
 - 排行榜、賽季、配對分、Elo 或其他未規範的強弱評分。
 - OAuth、Google Login、Email、手機推播。
-- QR Code、PWA 離線、WebSocket、SignalR。
+- QR Code、PWA 離線、手機作業系統推播或自訂原生 WebSocket protocol。
 - React、Vue、Blazor 或其他 SPA。
 - Microservices、Redis、獨立 REST API、獨立 DB container。
 - PostgreSQL、SQL Server、Admin Portal 或完整角色權限系統。
@@ -22,7 +22,7 @@ Tournament-scoped 雙人／三人臨時隊伍是已核准功能，不受「永�
 固定使用：
 
 - ASP.NET Core Razor Pages
-- Bootstrap、必要的 Vanilla JavaScript
+- Bootstrap、Vanilla JavaScript、ASP.NET Core SignalR client
 - EF Core + SQLite
 - Docker 單一 Web container
 - 主機側 Cloudflare Tunnel
@@ -33,7 +33,7 @@ Tournament-scoped 雙人／三人臨時隊伍是已核准功能，不受「永�
 
 - QuickBattleInvitation 與 Battle 是不同 aggregate；接受前不可建立 Battle。
 - 快速賽前、雙方私密 Lineup、確認、edit request 與私密 Reorder 經 QuickBattleFlowService。
-- BattleService 只負責已建立 Battle 的 Side、開始、事件、Round、Finish、棄權／取消、Revision 與授權讀取。
+- BattleService 只負責已建立 Battle 的 Side、開始、交易式結果／Round 完成、Finish、棄權／取消、Revision 與授權讀取。
 - 新程式不得呼叫 CreateDraftAsync、SetLineupAsync、LockLineupAsync 或 CreateReorderedLineupAsync 舊契約。
 - Player A/B 是資料方向；B／X 是 SideADesignation，不能用玩家 Id 欄位重建舊 BSidePlayerId／XSidePlayerId 模型。
 
@@ -83,7 +83,7 @@ Revision 必須：
 2. 要求原因。
 3. 保存 Round 及 Battle 修改前快照。
 4. 重建有效 BattleResult。
-5. 從最早受影響事件重播比分與狀態。
+5. 修改較早 Round 時保存並使所有後續 Round／Event 失效，再從下一站位建立新流程並重算比分與狀態。
 6. 保存修改後快照。
 7. 使統計立即反映有效資料。
 
@@ -96,7 +96,7 @@ Revision 必須：
 - Service 再驗證使用者是否為擁有者、參賽者、代表人或主辦方。
 - 公開 Tournament read model 與私密 Match workspace 分離。
 - Lineup 未完成共同提交前，不向對手或觀眾公開。
-- Account 只用於登入及精確邀請搜尋，不顯示在公開頁。
+- Account 只用於登入，不用於玩家搜尋且不顯示在公開頁；搜尋只回傳唯一 DisplayName 與 UserId。
 
 ## UI
 
@@ -104,7 +104,7 @@ Revision 必須：
 - 重要裁判操作不可藏在 dropdown。
 - 達 ScoreToWin 顯示明確提示，不自動 Completed。
 - 待處理／active Battle 有可發現返回入口。
-- polling 只執行 GET／狀態刷新，不自動 POST。
+- SignalR 只提示狀態變更；重連同步與 polling 只執行 GET／狀態刷新，不自動 POST。
 - 取消、棄權、No-show、Void 及下游撤銷需要清楚影響說明與確認。
 
 ## No Premature Abstraction

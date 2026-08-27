@@ -29,8 +29,8 @@ public class DetailsModel(TournamentService tournamentService, TournamentMatchSe
     public IReadOnlyList<TournamentMatchAction> ActionMatches { get; private set; } = [];
     public IReadOnlyList<TournamentStandingRow> Standings { get; private set; } = [];
     [BindProperty] public string? TeamName { get; set; }
-    [BindProperty] public string InvitePlayer { get; set; } = string.Empty;
-    [BindProperty] public string InviteParticipant { get; set; } = string.Empty;
+    [BindProperty] public int InvitePlayerUserId { get; set; }
+    [BindProperty] public int InviteParticipantUserId { get; set; }
     [BindProperty] public int NewRepresentativeId { get; set; }
     [BindProperty] public int FirstMemberId { get; set; }
     [BindProperty] public int SecondMemberId { get; set; }
@@ -77,7 +77,7 @@ public class DetailsModel(TournamentService tournamentService, TournamentMatchSe
 
     public async Task<IActionResult> OnPostInviteTeamMemberAsync(int id, int entryId)
     {
-        var result = await tournamentService.InviteTeamMemberAsync(id, entryId, User.GetRequiredUserId(), InvitePlayer);
+        var result = await tournamentService.InviteTeamMemberAsync(id, entryId, User.GetRequiredUserId(), InvitePlayerUserId);
         TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded ? "隊伍邀請已送出。" : result.Error;
         return RedirectToPage(new { id });
     }
@@ -183,7 +183,7 @@ public class DetailsModel(TournamentService tournamentService, TournamentMatchSe
     public async Task<IActionResult> OnPostInviteParticipantAsync(int id)
     {
         var result = await tournamentService.InviteParticipantAsync(
-            id, User.GetRequiredUserId(), InviteParticipant);
+            id, User.GetRequiredUserId(), InviteParticipantUserId);
         TempData[result.Succeeded ? "Success" : "Error"] = result.Succeeded
             ? "參賽邀請已送出。"
             : result.Error;

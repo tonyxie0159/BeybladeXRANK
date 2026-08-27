@@ -1,4 +1,5 @@
 using BeybladeRecordSystem.Domain.Entities;
+using BeybladeRecordSystem.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace BeybladeRecordSystem.Data;
@@ -21,15 +22,43 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TournamentInvitation> TournamentInvitations => Set<TournamentInvitation>();
     public DbSet<TournamentMatch> TournamentMatches => Set<TournamentMatch>();
     public DbSet<TournamentMatchParticipant> TournamentMatchParticipants => Set<TournamentMatchParticipant>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        NormalizeUserIdentities();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        NormalizeUserIdentities();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void NormalizeUserIdentities()
+    {
+        foreach (var entry in ChangeTracker.Entries<User>()
+                     .Where(x => x.State is EntityState.Added or EntityState.Modified))
+        {
+            entry.Entity.Account = entry.Entity.Account.Trim();
+            entry.Entity.DisplayName = entry.Entity.DisplayName.Trim();
+            entry.Entity.NormalizedAccount = IdentityNormalizer.Normalize(entry.Entity.Account);
+            entry.Entity.NormalizedDisplayName = IdentityNormalizer.Normalize(entry.Entity.DisplayName);
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>(entity =>
         {
-            entity.HasIndex(x => x.Account).IsUnique();
+            entity.HasIndex(x => x.NormalizedAccount).IsUnique();
+            entity.HasIndex(x => x.NormalizedDisplayName).IsUnique();
             entity.Property(x => x.Account).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.NormalizedAccount).HasMaxLength(64).IsRequired();
             entity.Property(x => x.PasswordHash).IsRequired();
             entity.Property(x => x.DisplayName).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.NormalizedDisplayName).HasMaxLength(64).IsRequired();
         });
 
         modelBuilder.Entity<Beyblade>(entity =>
@@ -57,6 +86,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasOne(x => x.VoidedByUser).WithMany().HasForeignKey(x => x.VoidedByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.TournamentMatch).WithOne(x => x.Battle).HasForeignKey<Battle>(x => x.TournamentMatchId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.VoidedTournamentMatch).WithMany(x => x.VoidedBattles).HasForeignKey(x => x.VoidedTournamentMatchId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserNotification>(entity =>
+        {
+            entity.Property(x => x.Title).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Message).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.TargetUrl).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.EntityType).HasMaxLength(64);
+            entity.Property(x => x.DedupeKey).HasMaxLength(200);
+            entity.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.UserId, x.DedupeKey }).IsUnique()
+                .HasFilter("ResolvedAtUtc IS NULL AND DedupeKey IS NOT NULL");
+            entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<QuickBattleInvitation>(entity =>

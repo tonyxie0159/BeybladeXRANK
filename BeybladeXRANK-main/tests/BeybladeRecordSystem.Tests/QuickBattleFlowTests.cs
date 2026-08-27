@@ -2,6 +2,7 @@ using BeybladeRecordSystem.Data;
 using BeybladeRecordSystem.Domain.Entities;
 using BeybladeRecordSystem.Domain.Enums;
 using BeybladeRecordSystem.Domain.Tournaments;
+using BeybladeRecordSystem.Realtime;
 using BeybladeRecordSystem.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -263,6 +264,33 @@ public class QuickBattleFlowTests
     }
 
     [Fact]
+    public async Task AssigningSides_KeepsBothPlayersInSetup_UntilFirstRoundStarts()
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+        var battleId = await fixture.CreateBattleInReviewAsync();
+        Assert.True((await fixture.Flow.ConfirmLineupAsync(battleId, fixture.PlayerA.Id)).Succeeded);
+        Assert.True((await fixture.Flow.ConfirmLineupAsync(battleId, fixture.PlayerB.Id)).Succeeded);
+
+        fixture.Publisher.Events.Clear();
+        Assert.True((await fixture.Battles.AssignSidesAsync(battleId, fixture.PlayerA.Id, BattleSide.B)).Succeeded);
+
+        var sideEvents = fixture.Publisher.Events.Where(x => x.EventType == "battle-state").ToList();
+        Assert.Equal(2, sideEvents.Count);
+        Assert.All(sideEvents, item => Assert.Equal(
+            $"/Battles/Setup/{battleId}",
+            item.Payload.GetType().GetProperty("targetUrl")!.GetValue(item.Payload)));
+
+        fixture.Publisher.Events.Clear();
+        Assert.True((await fixture.Battles.StartBattleAsync(battleId, fixture.PlayerA.Id)).Succeeded);
+
+        var startEvents = fixture.Publisher.Events.Where(x => x.EventType == "battle-state").ToList();
+        Assert.Equal(2, startEvents.Count);
+        Assert.All(startEvents, item => Assert.Equal(
+            $"/Battles/Battle/{battleId}",
+            item.Payload.GetType().GetProperty("targetUrl")!.GetValue(item.Payload)));
+    }
+
+    [Fact]
     public async Task Reorder_IsPrivatePerPlayerAndAppliesOnlyAfterBothSubmit()
     {
         await using var fixture = await QuickBattleFixture.CreateAsync();
@@ -303,7 +331,7 @@ public class QuickBattleFlowTests
     }
 
     [Fact]
-    public async Task RevisionWhileWaitingForReorder_RecalculatesScoreWithoutLeavingReorderState()
+    public async Task RevisionWhileWaitingForReorder_InvalidatesLaterRoundsAndRestartsAtSecondPosition()
     {
         await using var fixture = await QuickBattleFixture.CreateAsync();
         var battleId = await fixture.CreateStartedBattleAsync();
@@ -323,9 +351,13 @@ public class QuickBattleFlowTests
 
         fixture.Db.ChangeTracker.Clear();
         var revised = await fixture.Db.Battles.SingleAsync(x => x.Id == battleId);
-        Assert.Equal(BattleStatus.ReorderSelection, revised.Status);
-        Assert.Equal(2, revised.SideAScore);
+        Assert.Equal(BattleStatus.InProgress, revised.Status);
+        Assert.Equal(0, revised.SideAScore);
         Assert.Equal(1, revised.SideBScore);
+        var restarted = await fixture.Db.BattleRounds.SingleAsync(x => x.BattleId == battleId && x.Status == BattleRoundStatus.InProgress);
+        Assert.Equal(2, restarted.PositionNo);
+        Assert.All(await fixture.Db.BattleRoundEvents.Where(x => x.BattleRound.RoundNo > 1).ToListAsync(),
+            x => Assert.False(x.IsEffective));
         Assert.Single(await fixture.Db.BattleRoundRevisions.Where(x => x.BattleRoundId == firstRoundId).ToListAsync());
     }
 
@@ -335,6 +367,7 @@ public class QuickBattleFlowTests
         public AppDbContext Db { get; }
         public QuickBattleFlowService Flow { get; }
         public BattleService Battles { get; }
+        public RecordingRealtimePublisher Publisher { get; }
         public User PlayerA { get; private init; } = null!;
         public User PlayerB { get; private init; } = null!;
         public List<int> PlayerABladeIds { get; private init; } = [];
@@ -344,8 +377,9 @@ public class QuickBattleFlowTests
         {
             this.connection = connection;
             Db = db;
-            Flow = new QuickBattleFlowService(db);
-            Battles = new BattleService(db);
+            Publisher = new RecordingRealtimePublisher();
+            Flow = new QuickBattleFlowService(db, realtimePublisher: Publisher);
+            Battles = new BattleService(db, Publisher);
         }
 
         public static async Task<QuickBattleFixture> CreateAsync()
@@ -401,6 +435,23 @@ public class QuickBattleFlowTests
         {
             await Db.DisposeAsync();
             await connection.DisposeAsync();
+        }
+    }
+
+    private sealed class RecordingRealtimePublisher : IRealtimePublisher
+    {
+        public List<(int UserId, string EventType, object Payload)> Events { get; } = [];
+
+        public Task PublishUserAsync(int userId, string eventType, object payload, CancellationToken cancellationToken = default)
+        {
+            Events.Add((userId, eventType, payload));
+            return Task.CompletedTask;
+        }
+
+        public Task PublishUsersAsync(IEnumerable<int> userIds, string eventType, object payload, CancellationToken cancellationToken = default)
+        {
+            Events.AddRange(userIds.Distinct().Select(userId => (userId, eventType, payload)));
+            return Task.CompletedTask;
         }
     }
 }

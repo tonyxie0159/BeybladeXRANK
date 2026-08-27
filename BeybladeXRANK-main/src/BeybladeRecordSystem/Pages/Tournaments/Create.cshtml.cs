@@ -13,6 +13,7 @@ namespace BeybladeRecordSystem.Pages.Tournaments;
 public class CreateModel(TournamentService tournamentService) : PageModel
 {
     [BindProperty, Required, StringLength(120)] public string Name { get; set; } = string.Empty;
+    [BindProperty] public TournamentMode Mode { get; set; } = TournamentMode.Individual;
     [BindProperty] public TournamentRuleSet RuleSet { get; set; } = TournamentRuleSet.IndividualThreeBladeFourPoints;
     [BindProperty] public TournamentRegistrationMode RegistrationMode { get; set; } = TournamentRegistrationMode.Individual;
     [BindProperty] public TournamentFormat Format { get; set; } = TournamentFormat.SingleElimination;
@@ -22,6 +23,14 @@ public class CreateModel(TournamentService tournamentService) : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
+        var selectedRule = TournamentRuleCatalog.Get(RuleSet);
+        if (selectedRule.Mode != Mode)
+            ModelState.AddModelError(nameof(RuleSet), "所選規則與比賽模式不相符，請重新選擇。");
+        RegistrationMode = Mode == TournamentMode.Individual
+            ? TournamentRegistrationMode.Individual
+            : RegistrationMode == TournamentRegistrationMode.Individual
+                ? TournamentRegistrationMode.CompleteTeam
+                : RegistrationMode;
         if (!ModelState.IsValid) return Page();
         var result = await tournamentService.CreateAsync(
             User.GetRequiredUserId(),

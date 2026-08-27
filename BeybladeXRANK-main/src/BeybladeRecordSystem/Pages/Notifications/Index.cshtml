@@ -1,0 +1,53 @@
+@page "/Notifications"
+@model BeybladeRecordSystem.Pages.Notifications.IndexModel
+@using BeybladeRecordSystem.Domain.Enums
+@{
+    ViewData["Title"] = "通知中心";
+}
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow"><span></span>NOTIFICATIONS</p>
+        <h1>通知中心</h1>
+        <p>所有邀請、回覆結果及需要處理的戰內訊息都集中在這裡。</p>
+    </div>
+    <form method="post" asp-page-handler="MarkAllRead">
+        <button class="btn btn-outline-secondary">全部標示已讀</button>
+    </form>
+</header>
+
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (Model.Notifications.Count == 0)
+{
+    <section class="empty-state"><h2>目前沒有通知</h2><p class="text-muted mb-0">收到邀請或流程提醒後會顯示在這裡。</p></section>
+}
+else
+{
+    <div class="notification-list">
+        @foreach (var item in Model.Notifications)
+        {
+            <article class="notification-item @(item.ReadAtUtc is null ? "is-unread" : "")">
+                <a asp-page="/Notifications/Index" asp-page-handler="Open" asp-route-id="@item.Id" class="notification-copy">
+                    <strong>@item.Title</strong>
+                    <span>@item.Message</span>
+                    <small>@item.CreatedAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small>
+                </a>
+                @if (item.ResolvedAtUtc is null && item.ActionType != UserNotificationActionType.None)
+                {
+                    <form method="post" asp-page-handler="Accept">
+                        <input type="hidden" name="id" value="@item.Id" />
+                        <button class="btn btn-success btn-sm">接受</button>
+                    </form>
+                }
+            </article>
+        }
+    </div>
+}

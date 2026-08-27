@@ -1,4 +1,5 @@
 using BeybladeRecordSystem.Domain.Entities;
+using BeybladeRecordSystem.Domain;
 using BeybladeRecordSystem.Domain.Enums;
 using BeybladeRecordSystem.Infrastructure;
 using BeybladeRecordSystem.Services;
@@ -13,6 +14,7 @@ public class BattleModel(BattleService battleService) : PageModel
 {
     public Battle Battle { get; private set; } = null!;
     public BattleRound? CurrentRound => Battle.Rounds.OrderByDescending(x => x.RoundNo).FirstOrDefault(x => x.Status == BattleRoundStatus.InProgress);
+    public BattleRound? DisplayRound => CurrentRound ?? Battle.Rounds.OrderByDescending(x => x.RoundNo).FirstOrDefault();
     public bool CanOperate => Battle.CreatedByUserId == User.GetRequiredUserId();
     public bool CanReorder => Battle.SourceType == BattleSourceType.Quick && Battle.Status == BattleStatus.ReorderSelection &&
         (Battle.PlayerAId == User.GetRequiredUserId() || Battle.PlayerBId == User.GetRequiredUserId());
@@ -24,8 +26,29 @@ public class BattleModel(BattleService battleService) : PageModel
     private TournamentMatch? SourceMatch => Battle.TournamentMatch ?? Battle.VoidedTournamentMatch;
     public string SideALabel => Battle.SourceType == BattleSourceType.TournamentTeam ? SourceMatch!.SideAEntry!.DisplayNameSnapshot : Battle.PlayerA!.DisplayName;
     public string SideBLabel => Battle.SourceType == BattleSourceType.TournamentTeam ? SourceMatch!.SideBEntry!.DisplayNameSnapshot : Battle.PlayerB!.DisplayName;
+    public bool SideAIsB => Battle.SideADesignation == BattleSide.B;
+    public int BScore => SideAIsB ? Battle.SideAScore : Battle.SideBScore;
+    public int XScore => SideAIsB ? Battle.SideBScore : Battle.SideAScore;
+    public string BPlayerName => DisplayRound is null ? (SideAIsB ? SideALabel : SideBLabel) :
+        SideAIsB ? DisplayRound.PlayerADisplayNameSnapshot : DisplayRound.PlayerBDisplayNameSnapshot;
+    public string XPlayerName => DisplayRound is null ? (SideAIsB ? SideBLabel : SideALabel) :
+        SideAIsB ? DisplayRound.PlayerBDisplayNameSnapshot : DisplayRound.PlayerADisplayNameSnapshot;
+    public int? BPlayerId => DisplayRound is null ? (SideAIsB ? Battle.PlayerAId : Battle.PlayerBId) :
+        SideAIsB ? DisplayRound.PlayerAId : DisplayRound.PlayerBId;
+    public int? XPlayerId => DisplayRound is null ? (SideAIsB ? Battle.PlayerBId : Battle.PlayerAId) :
+        SideAIsB ? DisplayRound.PlayerBId : DisplayRound.PlayerAId;
+    public string? BBeybladeName => DisplayRound is null ? null : SideAIsB ? DisplayRound.PlayerABeybladeNameSnapshot : DisplayRound.PlayerBBeybladeNameSnapshot;
+    public string? XBeybladeName => DisplayRound is null ? null : SideAIsB ? DisplayRound.PlayerBBeybladeNameSnapshot : DisplayRound.PlayerABeybladeNameSnapshot;
+    public int BFaults => CurrentRound is null || BPlayerId is null ? 0 : BattleRules.FaultCount(CurrentRound.Events, BPlayerId.Value);
+    public int XFaults => CurrentRound is null || XPlayerId is null ? 0 : BattleRules.FaultCount(CurrentRound.Events, XPlayerId.Value);
 
-    public async Task<IActionResult> OnGetAsync(int id) => await LoadAsync(id) ? Page() : NotFound();
+    public async Task<IActionResult> OnGetAsync(int id)
+    {
+        if (!await LoadAsync(id)) return NotFound();
+        return Battle.Status is BattleStatus.Completed or BattleStatus.Forfeited
+            ? RedirectToPage("Details", new { id })
+            : Page();
+    }
     public async Task<IActionResult> OnPostFaultAsync(int id, int playerId)
     {
         var loaded = await LoadAsync(id); if (!loaded || CurrentRound is null) return NotFound();
@@ -35,8 +58,8 @@ public class BattleModel(BattleService battleService) : PageModel
     public async Task<IActionResult> OnPostResultAsync(int id, int winnerPlayerId, ResultType resultType)
     {
         var loaded = await LoadAsync(id); if (!loaded || CurrentRound is null) return NotFound();
-        var result = await battleService.RecordBattleResultAsync(id, CurrentRound.Id, User.GetRequiredUserId(), winnerPlayerId, resultType);
-        return RedirectWithResult(id, result);
+        var result = await battleService.RecordAndCompleteRoundAsync(id, CurrentRound.Id, User.GetRequiredUserId(), winnerPlayerId, resultType);
+        return RedirectWithResult(id, result.Succeeded, result.Error);
     }
     public async Task<IActionResult> OnPostCompleteRoundAsync(int id)
     {
@@ -47,12 +70,14 @@ public class BattleModel(BattleService battleService) : PageModel
     public async Task<IActionResult> OnPostFinishAsync(int id)
     {
         var result = await battleService.FinishBattleAsync(id, User.GetRequiredUserId());
+        if (result.Succeeded) return RedirectToPage("Details", new { id });
         return RedirectWithResult(id, result);
     }
     public async Task<IActionResult> OnPostForfeitQuickAsync(int id, int forfeitingPlayerId)
     {
         var result = await battleService.ForfeitQuickBattleAsync(
             id, User.GetRequiredUserId(), forfeitingPlayerId);
+        if (result.Succeeded) return RedirectToPage("Details", new { id });
         return RedirectWithResult(id, result);
     }
     public async Task<IActionResult> OnPostCancelQuickAsync(int id, bool confirmCancellation)

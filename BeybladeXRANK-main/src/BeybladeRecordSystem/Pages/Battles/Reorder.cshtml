@@ -16,10 +16,9 @@ else
         @for (var index = 0; index < 3; index++)
         {
             <label class="form-label">@(index + 1) 號順位</label>
-            <select name="BladeIds" class="form-select mb-3">@foreach (var blade in Model.Workspace.OriginalSelections) { <option value="@blade.BeybladeId">@blade.BeybladeNameSnapshot</option> }</select>
+            <select name="BladeIds" class="form-select mb-3">@foreach (var blade in Model.Workspace.OriginalSelections) { <option value="@blade.BeybladeId" selected="@(blade.PositionNo == index + 1)">@blade.BeybladeNameSnapshot</option> }</select>
         }
         <button class="btn btn-primary btn-lg">密封提交重排</button>
     </form>
 }
 <a asp-page="Battle" asp-route-id="@battle.Id" class="btn btn-link mt-3">返回比分畫面</a>
-@section Scripts { @if (Model.Workspace.CurrentUserSubmitted) { <script>window.setTimeout(() => window.location.reload(), 10000);</script> } }

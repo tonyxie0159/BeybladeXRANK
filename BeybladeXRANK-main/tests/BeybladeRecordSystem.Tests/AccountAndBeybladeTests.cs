@@ -24,6 +24,27 @@ public class AccountAndBeybladeTests
     }
 
     [Fact]
+    public async Task Register_AndSettings_EnforceCaseInsensitiveAccountAndDisplayNameUniqueness()
+    {
+        await using var fixture = await TestDatabase.CreateAsync();
+        var auth = new AuthService(fixture.Db);
+
+        Assert.True((await auth.RegisterAsync(" Player-A ", "secret-password", " 玩家 One ")).Succeeded);
+        Assert.False((await auth.RegisterAsync("player-a", "another-password", "玩家 Two")).Succeeded);
+        Assert.False((await auth.RegisterAsync("player-b", "another-password", "玩家 one")).Succeeded);
+
+        var first = await fixture.Db.Users.SingleAsync();
+        Assert.Equal("Player-A", first.Account);
+        Assert.Equal("PLAYER-A", first.NormalizedAccount);
+        Assert.Equal("玩家 One", first.DisplayName);
+        Assert.NotNull(await auth.LoginAsync("PLAYER-A", "secret-password"));
+
+        Assert.True((await auth.RegisterAsync("player-b", "secret-password", "玩家 Two")).Succeeded);
+        var second = await fixture.Db.Users.SingleAsync(x => x.NormalizedAccount == "PLAYER-B");
+        Assert.False((await auth.ChangeDisplayNameAsync(second.Id, "玩家 ONE")).Succeeded);
+    }
+
+    [Fact]
     public async Task BeybladeCrud_UsesSoftDelete_AndEnforcesNamesPerUser()
     {
         await using var fixture = await TestDatabase.CreateAsync();

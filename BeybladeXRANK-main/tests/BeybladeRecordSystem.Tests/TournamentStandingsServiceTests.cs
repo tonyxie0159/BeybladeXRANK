@@ -71,7 +71,7 @@ public class TournamentStandingsServiceTests
     }
 
     [Fact]
-    public void Swiss_ByeCountsAsWinWithoutOpponentOrInventedPoints()
+    public void Swiss_ByeDoesNotCountAsWinOrInventPoints()
     {
         var tournament = CreateTournament(TournamentFormat.Swiss, 3);
         tournament.Matches = [
@@ -82,7 +82,7 @@ public class TournamentStandingsServiceTests
         var rows = TournamentStandingsService.Calculate(tournament);
         var bye = rows.Single(x => x.EntryId == 3);
 
-        Assert.Equal(1, bye.Wins);
+        Assert.Equal(0, bye.Wins);
         Assert.Equal(0, bye.Losses);
         Assert.Equal(0, bye.Buchholz);
         Assert.Equal(0, bye.ScoreDifference);

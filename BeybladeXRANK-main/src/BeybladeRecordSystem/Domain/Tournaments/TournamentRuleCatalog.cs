@@ -44,5 +44,14 @@ public static class TournamentRuleCatalog
     };
 
     public static string BuildSnapshot(TournamentRuleDefinition rule, TournamentFormat format) =>
-        $"{rule.DisplayName}；賽制：{format}；每場重新選擇陀螺；達勝分後須由裁判確認結束。";
+        $"{rule.DisplayName}；賽制：{FormatLabel(format)}；每場重新選擇陀螺；達勝分後須由裁判確認結束。";
+
+    private static string FormatLabel(TournamentFormat format) => format switch
+    {
+        TournamentFormat.SingleElimination => "單淘汰",
+        TournamentFormat.DoubleElimination => "雙敗淘汰",
+        TournamentFormat.RoundRobin => "單循環",
+        TournamentFormat.Swiss => "瑞士輪",
+        _ => throw new ArgumentOutOfRangeException(nameof(format))
+    };
 }

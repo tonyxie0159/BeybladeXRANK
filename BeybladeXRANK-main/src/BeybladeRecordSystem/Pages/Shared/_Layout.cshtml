@@ -19,6 +19,20 @@
                     <span class="brand-mark" aria-hidden="true"><span>X</span></span>
                     <span class="brand-copy"><strong>BEYBLADE X</strong><small>RANK SYSTEM</small></span>
                 </a>
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <div class="dropdown notification-nav">
+                        <button id="notificationBell" class="notification-bell" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="通知，沒有未讀訊息">
+                            <span aria-hidden="true">🔔</span>
+                            <span id="notificationBadge" class="notification-badge" hidden>!</span>
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end notification-menu" aria-labelledby="notificationBell">
+                            <div class="notification-menu-header"><strong>通知</strong><span id="notificationCountLabel">沒有未讀訊息</span></div>
+                            <div id="notificationPreview" class="notification-preview"><p class="text-muted mb-0 p-3">正在同步通知…</p></div>
+                            <a class="dropdown-item notification-all-link" asp-page="/Notifications/Index">查看全部通知</a>
+                        </div>
+                    </div>
+                }
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#primaryNavigation"
                         aria-controls="primaryNavigation" aria-expanded="false" aria-label="開啟導覽選單">
                     <span class="navbar-toggler-icon"></span>
@@ -54,6 +68,8 @@
 
     @if (User.Identity?.IsAuthenticated == true)
     {
+        <form id="notificationActionForm" method="post" hidden>@Html.AntiForgeryToken()</form>
+        <div id="notificationToastRegion" class="notification-toast-region" aria-live="polite" aria-atomic="false"></div>
         <nav class="mobile-dock" aria-label="手機快速導覽">
             <a asp-page="/Index"><span aria-hidden="true">⌂</span><small>首頁</small></a>
             <a asp-page="/Battles/Invitations"><span aria-hidden="true">⚔</span><small>對戰</small></a>
@@ -71,6 +87,11 @@
 
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <script src="~/lib/signalr/dist/browser/signalr.min.js"></script>
+        <script src="~/js/notifications.js" asp-append-version="true"></script>
+    }
     <script src="~/js/site.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
