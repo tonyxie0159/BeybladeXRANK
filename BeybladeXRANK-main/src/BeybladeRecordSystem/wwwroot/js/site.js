@@ -74,4 +74,19 @@
             window.bootstrap.Collapse.getOrCreateInstance(navigation).hide();
         });
     });
+
+    const navigation = document.getElementById("primaryNavigation");
+    const navigationToggle = document.querySelector("[aria-controls='primaryNavigation']");
+    if (navigation && navigationToggle) {
+        const updateNavigationToggleLabel = expanded => {
+            const label = expanded
+                ? navigationToggle.dataset.expandedLabel
+                : navigationToggle.dataset.collapsedLabel;
+            if (label) navigationToggle.setAttribute("aria-label", label);
+        };
+
+        navigation.addEventListener("show.bs.collapse", () => updateNavigationToggleLabel(true));
+        navigation.addEventListener("hide.bs.collapse", () => updateNavigationToggleLabel(false));
+        updateNavigationToggleLabel(navigationToggle.getAttribute("aria-expanded") === "true");
+    }
 })();
