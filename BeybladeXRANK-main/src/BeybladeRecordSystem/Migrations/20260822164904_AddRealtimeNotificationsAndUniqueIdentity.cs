@@ -32,8 +32,30 @@ namespace BeybladeRecordSystem.Migrations
                 defaultValue: "");
 
             migrationBuilder.Sql("""
+                WITH RankedAccounts AS
+                (
+                    SELECT Id,
+                           ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(Account)) ORDER BY Id) AS DuplicateNo
+                    FROM Users
+                )
                 UPDATE Users
-                SET NormalizedAccount = UPPER(TRIM(Account)),
+                SET Account = SUBSTR(TRIM(Account), 1, MAX(1, 63 - LENGTH(CAST(Id AS TEXT)))) || '-' || Id
+                WHERE Id IN (SELECT Id FROM RankedAccounts WHERE DuplicateNo > 1);
+
+                WITH RankedDisplayNames AS
+                (
+                    SELECT Id,
+                           ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(DisplayName)) ORDER BY Id) AS DuplicateNo
+                    FROM Users
+                )
+                UPDATE Users
+                SET DisplayName = SUBSTR(TRIM(DisplayName), 1, MAX(1, 62 - LENGTH(CAST(Id AS TEXT)))) || ' #' || Id
+                WHERE Id IN (SELECT Id FROM RankedDisplayNames WHERE DuplicateNo > 1);
+
+                UPDATE Users
+                SET Account = TRIM(Account),
+                    DisplayName = TRIM(DisplayName),
+                    NormalizedAccount = UPPER(TRIM(Account)),
                     NormalizedDisplayName = UPPER(TRIM(DisplayName));
                 """);
 

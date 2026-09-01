@@ -16,6 +16,15 @@ public sealed class TournamentDisplayTests
     }
 
     [Fact]
+    public void RegistrationStage_IsOnlyShownWhileTournamentAcceptsRegistrationWorkflow()
+    {
+        Assert.True(TournamentDisplay.ShowRegistrationStage(TournamentStatus.RegistrationOpen));
+        Assert.False(TournamentDisplay.ShowRegistrationStage(TournamentStatus.InProgress));
+        Assert.False(TournamentDisplay.ShowRegistrationStage(TournamentStatus.Completed));
+        Assert.False(TournamentDisplay.ShowRegistrationStage(TournamentStatus.Cancelled));
+    }
+
+    [Fact]
     public void EveryUserVisibleStatus_HasLocalizedLabelAndSemanticBadge()
     {
         AssertLocalized(Enum.GetValues<TournamentStatus>(), TournamentDisplay.Label, TournamentDisplay.BadgeClass);

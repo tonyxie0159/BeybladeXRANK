@@ -91,6 +91,16 @@ public class QuickBattleFlowService(
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "不是可返回的快速對戰狀態。")
     };
 
+    public static string GetBattleTargetUrl(int battleId, BattleStatus status) => status switch
+    {
+        BattleStatus.LineupSelection or BattleStatus.LineupReview or
+            BattleStatus.LineupLocked or BattleStatus.SideSelection or BattleStatus.Draft => $"/Battles/Setup/{battleId}",
+        BattleStatus.InProgress or BattleStatus.VictoryPendingCompletion => $"/Battles/Battle/{battleId}",
+        BattleStatus.ReorderSelection => $"/Battles/Reorder/{battleId}",
+        BattleStatus.Completed or BattleStatus.Forfeited or BattleStatus.Voided => $"/Battles/Details/{battleId}",
+        _ => "/Battles/Invitations"
+    };
+
     public async Task<int> GetIncomingInvitationCountAsync(int userId) =>
         await db.QuickBattleInvitations.CountAsync(x => x.InviteeUserId == userId);
 
@@ -135,6 +145,7 @@ public class QuickBattleFlowService(
         }
         await transaction.CommitAsync();
         if (notification is not null) await notificationService!.PublishQueuedAsync(notification);
+        await PublishInvitationStateAsync(inviteeUserId, invitation.Id, "Pending");
         return ServiceResult<QuickBattleInvitation>.Success(invitation);
     }
 
@@ -181,6 +192,7 @@ public class QuickBattleFlowService(
         }
         await transaction.CommitAsync();
         if (outcome is not null) await notificationService!.PublishQueuedAsync(outcome);
+        await PublishInvitationStateAsync(invitation.InviterUserId, invitation.Id, "Accepted");
         await PublishBattleStateAsync(battle);
         return ServiceResult<int>.Success(battle.Id);
     }
@@ -211,6 +223,7 @@ public class QuickBattleFlowService(
         }
         await transaction.CommitAsync();
         if (outcome is not null) await notificationService!.PublishQueuedAsync(outcome);
+        await PublishInvitationStateAsync(invitation.InviterUserId, invitation.Id, "Declined");
         return ServiceResult.Success();
     }
 
@@ -240,6 +253,7 @@ public class QuickBattleFlowService(
         }
         await transaction.CommitAsync();
         if (outcome is not null) await notificationService!.PublishQueuedAsync(outcome);
+        await PublishInvitationStateAsync(invitation.InviteeUserId, invitation.Id, "Withdrawn");
         return ServiceResult.Success();
     }
 
@@ -544,17 +558,18 @@ public class QuickBattleFlowService(
         await PublishBattleStateAsync(battle);
     }
 
+    private Task PublishInvitationStateAsync(int userId, int invitationId, string status) =>
+        realtimePublisher?.PublishUserAsync(userId, "quick-invitation-state", new
+        {
+            invitationId,
+            status,
+            targetUrl = "/Battles/Invitations"
+        }) ?? Task.CompletedTask;
+
     private Task PublishBattleStateAsync(Battle battle)
     {
         if (realtimePublisher is null || battle.PlayerAId is null || battle.PlayerBId is null) return Task.CompletedTask;
-        var targetUrl = battle.Status switch
-        {
-            BattleStatus.LineupSelection or BattleStatus.LineupReview or BattleStatus.LineupLocked or BattleStatus.SideSelection => $"/Battles/Setup/{battle.Id}",
-            BattleStatus.ReorderSelection => $"/Battles/Reorder/{battle.Id}",
-            BattleStatus.InProgress or BattleStatus.VictoryPendingCompletion => $"/Battles/Battle/{battle.Id}",
-            BattleStatus.Completed => $"/Battles/Details/{battle.Id}",
-            _ => "/Battles/Invitations"
-        };
+        var targetUrl = GetBattleTargetUrl(battle.Id, battle.Status);
         return realtimePublisher.PublishUsersAsync(
             [battle.PlayerAId.Value, battle.PlayerBId.Value],
             "battle-state",

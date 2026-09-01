@@ -51,6 +51,66 @@ public class TournamentPersistenceTests
     }
 
     [Fact]
+    public async Task UniqueIdentityMigration_DisambiguatesLegacyCaseInsensitiveConflicts()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateContext(connection);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260820033301_AddQuickBattleInvitationFlow");
+        await context.Database.ExecuteSqlRawAsync("""
+            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (1, 'Legacy', 'hash', 'Same Player', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (2, ' legacy ', 'hash', ' same player ', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (3, 'Third', 'hash', 'Unique Player', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            """);
+
+        await migrator.MigrateAsync();
+        context.ChangeTracker.Clear();
+
+        var users = await context.Users.OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal("Legacy", users[0].Account);
+        Assert.Equal("Same Player", users[0].DisplayName);
+        Assert.Equal("legacy-2", users[1].Account);
+        Assert.Equal("same player #2", users[1].DisplayName);
+        Assert.Equal("Third", users[2].Account);
+        Assert.Equal("Unique Player", users[2].DisplayName);
+        Assert.Equal(users.Count, users.Select(x => x.NormalizedAccount).Distinct().Count());
+        Assert.Equal(users.Count, users.Select(x => x.NormalizedDisplayName).Distinct().Count());
+        Assert.All(users, user =>
+        {
+            Assert.Equal(user.Account.Trim().ToUpperInvariant(), user.NormalizedAccount);
+            Assert.Equal(user.DisplayName.Trim().ToUpperInvariant(), user.NormalizedDisplayName);
+        });
+    }
+
+    [Fact]
+    public async Task IdentityRepairMigration_ReconcilesAlreadyDeployedInconsistentNormalizedValues()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateContext(connection);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260822164904_AddRealtimeNotificationsAndUniqueIdentity");
+        await context.Database.ExecuteSqlRawAsync("""
+            INSERT INTO Users (Id, Account, NormalizedAccount, PasswordHash, DisplayName, NormalizedDisplayName, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (1, 'Legacy', 'LEGACY-2', 'hash', 'Same Player', 'SAME PLAYER #2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   (2, ' legacy ', 'LEGACY', 'hash', ' same player ', 'SAME PLAYER', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            """);
+
+        await migrator.MigrateAsync();
+        context.ChangeTracker.Clear();
+
+        var users = await context.Users.OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal("Legacy", users[0].Account);
+        Assert.Equal("Same Player", users[0].DisplayName);
+        Assert.Equal("legacy-2", users[1].Account);
+        Assert.Equal("same player #2", users[1].DisplayName);
+        Assert.Equal("LEGACY-2", users[1].NormalizedAccount);
+        Assert.Equal("SAME PLAYER #2", users[1].NormalizedDisplayName);
+    }
+
+    [Fact]
     public async Task BattleGeneralizationMigration_PreservesScoresAndBackfillsPlayerSnapshots()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

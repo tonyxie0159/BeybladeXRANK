@@ -53,7 +53,8 @@ public sealed class IndexModel(
         var notification = await db.UserNotifications.SingleOrDefaultAsync(x => x.Id == id && x.UserId == userId);
         if (notification is null) return RedirectToPage();
         await notificationService.MarkReadAsync(id, userId);
-        return LocalRedirect(IsSafeLocalUrl(notification.TargetUrl) ? notification.TargetUrl : "/Notifications");
+        var targetUrl = await ResolveCurrentTargetUrlAsync(notification, userId);
+        return LocalRedirect(IsSafeLocalUrl(targetUrl) ? targetUrl : "/Notifications");
     }
 
     public async Task<IActionResult> OnPostMarkReadAsync(int id)
@@ -114,6 +115,21 @@ public sealed class IndexModel(
             return new JsonResult(new { succeeded, error, targetUrl = safeTarget });
         TempData[succeeded ? "Success" : "Error"] = succeeded ? "邀請已接受。" : error;
         return LocalRedirect(succeeded ? safeTarget : "/Notifications");
+    }
+
+    private async Task<string> ResolveCurrentTargetUrlAsync(UserNotification notification, int userId)
+    {
+        if (notification.EntityType == "Battle" && notification.EntityId is int battleId)
+        {
+            var battleStatus = await db.Battles.AsNoTracking()
+                .Where(x => x.Id == battleId && (x.PlayerAId == userId || x.PlayerBId == userId))
+                .Select(x => (BattleStatus?)x.Status)
+                .SingleOrDefaultAsync();
+            if (battleStatus is BattleStatus status)
+                return QuickBattleFlowService.GetBattleTargetUrl(battleId, status);
+        }
+
+        return notification.TargetUrl;
     }
 
     private static bool IsSafeLocalUrl(string value) => value.StartsWith('/') && !value.StartsWith("//", StringComparison.Ordinal);

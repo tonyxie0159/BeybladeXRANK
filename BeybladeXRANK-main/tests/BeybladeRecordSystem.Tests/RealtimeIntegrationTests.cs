@@ -15,7 +15,7 @@ public sealed class RealtimeIntegrationTests(AccountWebApplicationFactory factor
     : IClassFixture<AccountWebApplicationFactory>
 {
     [Fact]
-    public async Task QuickInvitation_PushesPrivateNotificationToAuthenticatedInvitee()
+    public async Task QuickInvitation_PushesNotificationAndLifecycleStateToAuthenticatedInvitee()
     {
         var suffix = Guid.NewGuid().ToString("N");
         var inviterAccount = $"hub-inviter-{suffix}";
@@ -40,6 +40,8 @@ public sealed class RealtimeIntegrationTests(AccountWebApplicationFactory factor
         });
         var authCookie = await LoginAndGetAuthenticationCookieAsync(client, inviteeAccount, password);
         var received = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pendingState = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var withdrawnState = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var connection = new HubConnectionBuilder()
             .WithUrl(new Uri(factory.Server.BaseAddress, "/hubs/realtime"), options =>
             {
@@ -52,13 +54,22 @@ public sealed class RealtimeIntegrationTests(AccountWebApplicationFactory factor
         {
             if (message.TryGetProperty("eventType", out var type) && type.GetString() == "notification")
                 received.TrySetResult(message);
+            if (message.TryGetProperty("eventType", out type) && type.GetString() == "quick-invitation-state")
+            {
+                var status = message.GetProperty("payload").GetProperty("status").GetString();
+                if (status == "Pending") pendingState.TrySetResult(message);
+                if (status == "Withdrawn") withdrawnState.TrySetResult(message);
+            }
         });
         await connection.StartAsync();
 
+        int invitationId;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var quickFlow = scope.ServiceProvider.GetRequiredService<QuickBattleFlowService>();
-            Assert.True((await quickFlow.SendInvitationAsync(inviterId, inviteeId)).Succeeded);
+            var invitation = await quickFlow.SendInvitationAsync(inviterId, inviteeId);
+            Assert.True(invitation.Succeeded);
+            invitationId = invitation.Value!.Id;
         }
 
         var pushed = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -66,6 +77,16 @@ public sealed class RealtimeIntegrationTests(AccountWebApplicationFactory factor
         var payload = pushed.GetProperty("payload");
         Assert.Equal("快速對戰邀請", payload.GetProperty("title").GetString());
         Assert.Equal("/Battles/Invitations", payload.GetProperty("targetUrl").GetString());
+        var pending = await pendingState.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(invitationId, pending.GetProperty("payload").GetProperty("invitationId").GetInt32());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var quickFlow = scope.ServiceProvider.GetRequiredService<QuickBattleFlowService>();
+            Assert.True((await quickFlow.WithdrawInvitationAsync(invitationId, inviterId)).Succeeded);
+        }
+        var withdrawn = await withdrawnState.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(invitationId, withdrawn.GetProperty("payload").GetProperty("invitationId").GetInt32());
         await connection.StopAsync();
     }
 

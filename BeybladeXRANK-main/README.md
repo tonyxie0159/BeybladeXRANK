@@ -2,7 +2,7 @@
 
 手機／平板優先的戰鬥陀螺快速對戰、賽事與戰績工具，使用 ASP.NET Core Razor Pages、EF Core、SignalR 與 SQLite。
 
-第一次封測後的現行產品與工程規格，以 [`Docs/08-Development/first-closed-beta-experience-fixes.md`](Docs/08-Development/first-closed-beta-experience-fixes.md) 為準。README 只說明執行與驗證方式，不覆寫該規格。
+第一次封測後的現行產品與工程規格，以 [`../Docs/08-Development/first-closed-beta-experience-fixes.md`](../Docs/08-Development/first-closed-beta-experience-fixes.md) 為準。README 只說明執行與驗證方式，不覆寫該規格。
 
 ## 本機執行
 

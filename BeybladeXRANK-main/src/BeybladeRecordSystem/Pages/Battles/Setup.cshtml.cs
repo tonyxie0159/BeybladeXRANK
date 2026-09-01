@@ -19,6 +19,8 @@ public class SetupModel(QuickBattleFlowService flowService, BattleService battle
         if (!await LoadAsync(id)) return NotFound();
         if (Workspace.Battle.Status is BattleStatus.InProgress or BattleStatus.VictoryPendingCompletion)
             return RedirectToPage("Battle", new { id });
+        if (Workspace.Battle.Status is BattleStatus.Completed or BattleStatus.Forfeited or BattleStatus.Voided)
+            return RedirectToPage("Details", new { id });
         return Page();
     }
 
