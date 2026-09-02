@@ -1,6 +1,10 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using BeybladeRecordSystem.Data;
+using BeybladeRecordSystem.Domain.Entities;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BeybladeRecordSystem.Tests;
 
@@ -20,6 +24,20 @@ public sealed partial class StatisticsPageWebTests(AccountWebApplicationFactory 
         const string password = "statistics page regression password";
         await RegisterAndLoginAsync(client, account, password, $"戰績頁-{suffix[..6]}");
 
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var user = await db.Users.SingleAsync(x => x.NormalizedAccount == account.ToUpperInvariant());
+            db.Beyblades.Add(new Beyblade
+            {
+                UserId = user.Id,
+                Name = $"手機卡片測試陀螺-{suffix[..6]}",
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
         using var overviewResponse = await client.GetAsync(
             "/Statistics?view=overview&personalSource=team&personalSide=b&personalSort=x-winrate-asc");
 
@@ -37,6 +55,15 @@ public sealed partial class StatisticsPageWebTests(AccountWebApplicationFactory 
         Assert.DoesNotContain("data-statistics-view=\"blades\"", overviewHtml, StringComparison.Ordinal);
         Assert.DoesNotContain("data-statistics-view=\"opponents\"", overviewHtml, StringComparison.Ordinal);
         Assert.DoesNotContain("data-statistics-view=\"history\"", overviewHtml, StringComparison.Ordinal);
+
+        using var bladeResponse = await client.GetAsync("/Statistics?view=blades");
+
+        Assert.Equal(HttpStatusCode.OK, bladeResponse.StatusCode);
+        var bladeHtml = WebUtility.HtmlDecode(await bladeResponse.Content.ReadAsStringAsync());
+        Assert.Contains($"手機卡片測試陀螺-{suffix[..6]}", bladeHtml, StringComparison.Ordinal);
+        Assert.Contains("statistics-blade-card", bladeHtml, StringComparison.Ordinal);
+        Assert.Contains("查看 Side 與得分類型", bladeHtml, StringComparison.Ordinal);
+        Assert.Contains("statistics-result-types", bladeHtml, StringComparison.Ordinal);
 
         using var opponentResponse = await client.GetAsync("/Statistics?view=opponents&opponentSource=team");
 
