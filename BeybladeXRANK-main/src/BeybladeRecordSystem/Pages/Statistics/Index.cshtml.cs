@@ -14,10 +14,10 @@ public class IndexModel(StatisticsService statisticsService) : PageModel
     public BeybladeSourceSamplesViewModel Samples { get; private set; } = new(0, 0, 0, 0);
     public StatisticsSideSamplesViewModel SideSamples { get; private set; } = new(0, 0, 0, 0);
     public List<BeybladeStatisticsViewModel> Beyblades { get; private set; } = [];
-    public List<OpponentStatisticsViewModel> QuickOpponents { get; private set; } = [];
-    public List<OpponentStatisticsViewModel> IndividualOpponents { get; private set; } = [];
-    public List<OpponentStatisticsViewModel> TeamOpponents { get; private set; } = [];
+    public IReadOnlyList<OpponentStatisticsViewModel> Opponents { get; private set; } = [];
     public List<BattleHistoryViewModel> History { get; private set; } = [];
+    public string View { get; private set; } = "overview";
+    public string OpponentSource { get; private set; } = "quick";
     public string Sort { get; private set; } = "score-desc";
     public string Source { get; private set; } = "all";
     public string Side { get; private set; } = "all";
@@ -31,8 +31,12 @@ public class IndexModel(StatisticsService statisticsService) : PageModel
         string? side,
         string? personalSort,
         string? personalSource,
-        string? personalSide)
+        string? personalSide,
+        string? view,
+        string? opponentSource)
     {
+        View = NormalizeView(view);
+        OpponentSource = NormalizeOpponentSource(opponentSource);
         Sort = NormalizeSort(sort, "score-desc");
         Source = NormalizeSource(source);
         Side = NormalizeSide(side);
@@ -43,19 +47,45 @@ public class IndexModel(StatisticsService statisticsService) : PageModel
         var sideFilter = ParseSide(Side);
         var userId = User.GetRequiredUserId();
 
-        PersonalRows = await statisticsService.GetUserStatisticsRowsAsync(
-            userId,
-            PersonalSort,
-            ParseSource(PersonalSource),
-            ParseSide(PersonalSide));
-        Samples = await statisticsService.GetBeybladeSourceSamplesAsync(userId);
-        SideSamples = await statisticsService.GetBeybladeSideSamplesAsync(userId, sourceFilter);
-        Beyblades = await statisticsService.GetBeybladeStatisticsAsync(userId, Sort, sourceFilter, sideFilter);
-        QuickOpponents = await statisticsService.GetOpponentStatisticsAsync(userId, StatisticsSourceFilter.Quick);
-        IndividualOpponents = await statisticsService.GetOpponentStatisticsAsync(userId, StatisticsSourceFilter.TournamentIndividual);
-        TeamOpponents = await statisticsService.GetOpponentStatisticsAsync(userId, StatisticsSourceFilter.TournamentTeam);
-        History = await statisticsService.GetBattleHistoryAsync(userId, StatisticsSourceFilter.All);
+        switch (View)
+        {
+            case "blades":
+                Samples = await statisticsService.GetBeybladeSourceSamplesAsync(userId);
+                SideSamples = await statisticsService.GetBeybladeSideSamplesAsync(userId, sourceFilter);
+                Beyblades = await statisticsService.GetBeybladeStatisticsAsync(userId, Sort, sourceFilter, sideFilter);
+                break;
+            case "opponents":
+                Opponents = await statisticsService.GetOpponentStatisticsAsync(
+                    userId,
+                    ParseSource(OpponentSource));
+                break;
+            case "history":
+                History = await statisticsService.GetBattleHistoryAsync(userId, StatisticsSourceFilter.All);
+                break;
+            default:
+                PersonalRows = await statisticsService.GetUserStatisticsRowsAsync(
+                    userId,
+                    PersonalSort,
+                    ParseSource(PersonalSource),
+                    ParseSide(PersonalSide));
+                break;
+        }
     }
+
+    private static string NormalizeView(string? view) => view?.ToLowerInvariant() switch
+    {
+        "blades" => "blades",
+        "opponents" => "opponents",
+        "history" => "history",
+        _ => "overview"
+    };
+
+    private static string NormalizeOpponentSource(string? source) => source?.ToLowerInvariant() switch
+    {
+        "individual" => "individual",
+        "team" => "team",
+        _ => "quick"
+    };
 
     private static string NormalizeSort(string? sort, string fallback) => sort?.ToLowerInvariant() switch
     {
