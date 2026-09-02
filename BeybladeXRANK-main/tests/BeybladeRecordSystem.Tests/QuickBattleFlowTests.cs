@@ -12,6 +12,40 @@ namespace BeybladeRecordSystem.Tests;
 public class QuickBattleFlowTests
 {
     [Fact]
+    public async Task Invitation_RejectsSelfAndPublishesCounterpartyStateChanges()
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+
+        var selfInvitation = await fixture.Flow.SendInvitationAsync(fixture.PlayerA.Id, fixture.PlayerA.Id);
+
+        Assert.False(selfInvitation.Succeeded);
+        Assert.Empty(await fixture.Db.QuickBattleInvitations.ToListAsync());
+        Assert.Empty(fixture.Publisher.Events);
+
+        var invitation = (await fixture.Flow.SendInvitationAsync(fixture.PlayerA.Id, fixture.PlayerB.Id)).Value!;
+        var pendingEvent = Assert.Single(fixture.Publisher.Events);
+        Assert.Equal(fixture.PlayerB.Id, pendingEvent.UserId);
+        Assert.Equal("quick-invitation-state", pendingEvent.EventType);
+
+        fixture.Publisher.Events.Clear();
+        Assert.True((await fixture.Flow.WithdrawInvitationAsync(invitation.Id, fixture.PlayerA.Id)).Succeeded);
+        var withdrawnEvent = Assert.Single(fixture.Publisher.Events);
+        Assert.Equal(fixture.PlayerB.Id, withdrawnEvent.UserId);
+        Assert.Equal("quick-invitation-state", withdrawnEvent.EventType);
+    }
+
+    [Theory]
+    [InlineData(BattleStatus.LineupSelection, "/Battles/Setup/42")]
+    [InlineData(BattleStatus.InProgress, "/Battles/Battle/42")]
+    [InlineData(BattleStatus.ReorderSelection, "/Battles/Reorder/42")]
+    [InlineData(BattleStatus.Completed, "/Battles/Details/42")]
+    [InlineData(BattleStatus.Forfeited, "/Battles/Details/42")]
+    public void BattleTargetUrl_UsesCurrentPersistedStatus(BattleStatus status, string expected)
+    {
+        Assert.Equal(expected, QuickBattleFlowService.GetBattleTargetUrl(42, status));
+    }
+
+    [Fact]
     public async Task GetActiveBattles_ReturnsEveryResumableQuickStateWithDestination_AndPreservesOwnership()
     {
         await using var fixture = await QuickBattleFixture.CreateAsync();

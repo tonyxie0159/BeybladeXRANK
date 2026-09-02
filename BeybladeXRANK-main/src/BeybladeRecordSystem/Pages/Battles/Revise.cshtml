@@ -1,5 +1,75 @@
 @page "{id:int}"
 @model BeybladeRecordSystem.Pages.Battles.ReviseModel
 @using BeybladeRecordSystem.Domain.Enums
-@{ ViewData["Title"] = "Round 判決修改"; }
-<h1>Round 判決修改</h1><p class="text-muted">系統會從最早受影響事件依序重播；首次達勝利門檻後的事件會失效，並保存全場修改前後快照。</p><div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>@foreach (var round in Model.Battle.Rounds.OrderBy(x => x.RoundNo)) { <div class="card mb-3"><div class="card-body"><h2 class="h5">Round @round.RoundNo：@round.PlayerABeybladeNameSnapshot vs @round.PlayerBBeybladeNameSnapshot</h2><ul class="small">@foreach (var item in round.Events.OrderBy(x => x.EventSequence)) { <li class="@(item.IsEffective ? "" : "text-decoration-line-through text-muted")">@item.EventType @if (item.ResultType is not null) { <text>— @item.ResultType (+@item.ScoreAwarded)</text> }@if (item.InvalidationReason is not null) { <span>（@item.InvalidationReason）</span> }</li> }</ul><form method="post" class="row g-2"><input type="hidden" asp-for="RoundId" value="@round.Id" /><div class="col-md-4"><label class="form-label">勝者</label><select asp-for="WinnerPlayerId" class="form-select"><option value="@round.PlayerAId">@round.PlayerADisplayNameSnapshot</option><option value="@round.PlayerBId">@round.PlayerBDisplayNameSnapshot</option></select></div><div class="col-md-4"><label class="form-label">勝利方式</label><select asp-for="ResultType" asp-items="Html.GetEnumSelectList<ResultType>()" class="form-select"></select></div><div class="col-md-4"><label class="form-label">修改原因（必填）</label><input asp-for="Reason" class="form-control" maxlength="500" required /></div><div class="col-12"><div class="form-check"><input asp-for="ConfirmDownstreamReset" class="form-check-input" /><label asp-for="ConfirmDownstreamReset" class="form-check-label">若勝方變更且下游只有未記分 Lineup，同意撤銷下游通知與陣容</label></div></div><div class="col-12"><button class="btn btn-warning">修改此 Round 並重播</button></div></form></div></div> }<a asp-page="Battle" asp-route-id="@Model.Battle.Id" class="btn btn-link">回對戰畫面</a>
+@{
+    ViewData["Title"] = "Round 判決修改";
+}
+
+<h1>Round 判決修改</h1>
+<p class="text-muted">系統會從最早受影響事件依序重播；首次達勝利門檻後的事件會失效，並保存全場修改前後快照。</p>
+<div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+@foreach (var round in Model.Battle.Rounds.OrderBy(x => x.RoundNo))
+{
+    var effectiveResult = round.Events
+        .Where(x => x.IsEffective && x.EventType == BattleRoundEventType.BattleResult)
+        .OrderByDescending(x => x.EventSequence)
+        .FirstOrDefault();
+    var isFailedSubmission = !ViewData.ModelState.IsValid && Model.RoundId == round.Id;
+    var selectedWinnerId = isFailedSubmission ? Model.WinnerPlayerId : effectiveResult?.WinnerPlayerId ?? round.PlayerAId;
+    var selectedResultType = isFailedSubmission ? Model.ResultType : effectiveResult?.ResultType ?? ResultType.SpinFinish;
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Round @round.RoundNo：@round.PlayerABeybladeNameSnapshot vs @round.PlayerBBeybladeNameSnapshot</h2>
+            <ul class="small">
+                @foreach (var item in round.Events.OrderBy(x => x.EventSequence))
+                {
+                    <li class="@(item.IsEffective ? "" : "text-decoration-line-through text-muted")">
+                        @item.EventType
+                        @if (item.ResultType is not null)
+                        {
+                            <text>— @item.ResultType (+@item.ScoreAwarded)</text>
+                        }
+                        @if (item.InvalidationReason is not null)
+                        {
+                            <span>（@item.InvalidationReason）</span>
+                        }
+                    </li>
+                }
+            </ul>
+            <form method="post" class="row g-2">
+                <input type="hidden" name="RoundId" value="@round.Id" />
+                <div class="col-md-4">
+                    <label for="winner-@round.Id" class="form-label">勝者</label>
+                    <select id="winner-@round.Id" name="WinnerPlayerId" class="form-select">
+                        <option value="@round.PlayerAId" selected="@(selectedWinnerId == round.PlayerAId)">@round.PlayerADisplayNameSnapshot</option>
+                        <option value="@round.PlayerBId" selected="@(selectedWinnerId == round.PlayerBId)">@round.PlayerBDisplayNameSnapshot</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="result-type-@round.Id" class="form-label">勝利方式</label>
+                    <select id="result-type-@round.Id" name="ResultType" class="form-select">
+                        @foreach (var resultType in Enum.GetValues<ResultType>())
+                        {
+                            <option value="@resultType" selected="@(selectedResultType == resultType)">@resultType</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="reason-@round.Id" class="form-label">修改原因（必填）</label>
+                    <input id="reason-@round.Id" name="Reason" value="@(isFailedSubmission ? Model.Reason : null)" class="form-control" maxlength="500" required />
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input id="confirm-reset-@round.Id" name="ConfirmDownstreamReset" type="checkbox" value="true" checked="@(isFailedSubmission && Model.ConfirmDownstreamReset)" class="form-check-input" />
+                        <label for="confirm-reset-@round.Id" class="form-check-label">若勝方變更且下游只有未記分 Lineup，同意撤銷下游通知與陣容</label>
+                    </div>
+                </div>
+                <div class="col-12"><button class="btn btn-warning">修改此 Round 並重播</button></div>
+            </form>
+        </div>
+    </div>
+}
+
+<a asp-page="Battle" asp-route-id="@Model.Battle.Id" class="btn btn-link">回對戰畫面</a>

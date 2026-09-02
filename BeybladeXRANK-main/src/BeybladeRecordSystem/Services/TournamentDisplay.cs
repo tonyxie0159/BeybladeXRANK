@@ -5,6 +5,9 @@ namespace BeybladeRecordSystem.Services;
 
 public static class TournamentDisplay
 {
+    public static bool ShowRegistrationStage(TournamentStatus status) =>
+        status == TournamentStatus.RegistrationOpen;
+
     public static string Label(TournamentStatus value) => value switch
     {
         TournamentStatus.RegistrationOpen => "開放報名",

@@ -610,7 +610,19 @@ public class BattleService(AppDbContext db, IRealtimePublisher? realtimePublishe
             .FirstOrDefault();
         if (nextLineup is not null)
         {
-            db.BattleRounds.Add(CreateRound(battle, nextLineup, battle.Rounds.Max(x => x.RoundNo) + 1));
+            var reusableRound = battle.Rounds
+                .Where(x => x.RoundNo > revisedRound.RoundNo && x.LineupId == nextLineup.Id && x.Events.Count == 0)
+                .OrderBy(x => x.RoundNo)
+                .FirstOrDefault();
+            if (reusableRound is not null)
+            {
+                reusableRound.Status = BattleRoundStatus.InProgress;
+                reusableRound.CompletedAtUtc = null;
+            }
+            else
+            {
+                db.BattleRounds.Add(CreateRound(battle, nextLineup, battle.Rounds.Max(x => x.RoundNo) + 1));
+            }
             if (match is not null) match.Status = TournamentMatchStatus.InProgress;
         }
         else if (match is not null)

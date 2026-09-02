@@ -7,7 +7,7 @@
 @{ var details = Model.PublicDetails; ViewData["Title"] = details.Name; var registered = details.Entries.Count; var isElimination = Model.Tournament.Format is TournamentFormat.SingleElimination or TournamentFormat.DoubleElimination; var hasChampionPlayoff = Model.Tournament.Matches.Any(x => x.Bracket == TournamentBracket.Playoff); }
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div><h1>@details.Name</h1><div class="text-muted">主辦：@details.OrganizerDisplayName</div></div>
-    <div class="text-end"><div><span class="badge @TournamentDisplay.BadgeClass(details.Status)">@TournamentDisplay.Label(details.Status)</span> <span class="badge @TournamentDisplay.BadgeClass(details.RegistrationStage)">@TournamentDisplay.Label(details.RegistrationStage)</span></div><a asp-page="Details" asp-route-id="@details.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div>
+    <div class="text-end"><div><span class="badge @TournamentDisplay.BadgeClass(details.Status)">@TournamentDisplay.Label(details.Status)</span> @if (TournamentDisplay.ShowRegistrationStage(details.Status)) { <span class="badge @TournamentDisplay.BadgeClass(details.RegistrationStage)">@TournamentDisplay.Label(details.RegistrationStage)</span> }</div><a asp-page="Details" asp-route-id="@details.Id" class="btn btn-sm btn-outline-secondary mt-2">手動刷新</a></div>
 </div>
 <div id="tournament-poll-state" data-token="@details.PollToken" hidden></div>
 

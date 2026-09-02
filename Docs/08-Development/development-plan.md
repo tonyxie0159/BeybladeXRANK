@@ -2,7 +2,7 @@
 
 本文件只追蹤「有效規格與目前實作的差距」。不再使用已完成的兩天建置階段，也不保留舊版 Battle Setup 作為替代流程。
 
-第一次封測修正的需求、執行證據與實機清單記錄於 `../../BeybladeXRANK-main/Docs/08-Development/first-closed-beta-experience-fixes.md`；若有產品規則差異，仍以本文件集及 `Docs/README.md` 的優先順序為準。
+第一次封測修正的需求、執行證據與實機清單記錄於 `first-closed-beta-experience-fixes.md`；若有產品規則差異，仍以本文件集及 `Docs/README.md` 的優先順序為準。
 
 ## 已建立的基準
 

@@ -100,6 +100,10 @@
     const handleRealtimeEvent = message => {
         if (!message) return;
         if (message.eventType === "notification") showToast(message.payload);
+        if (message.eventType === "quick-invitation-state" && window.location.pathname === "/Battles/Invitations") {
+            window.location.reload();
+            return;
+        }
         if (message.eventType === "battle-state" && window.location.pathname.startsWith("/Battles/")) {
             const currentId = currentEntityId();
             if (currentId === Number(message.payload?.battleId) && message.payload?.targetUrl) {

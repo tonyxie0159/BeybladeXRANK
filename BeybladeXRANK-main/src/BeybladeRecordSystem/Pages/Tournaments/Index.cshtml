@@ -27,7 +27,13 @@
         <article class="card"><div class="card-body">
             <div class="d-flex flex-wrap justify-content-between gap-2">
                 <div><h2 class="h5 mb-1">@item.Name</h2><div class="text-muted">主辦：@item.OrganizerDisplayName</div></div>
-                <div><span class="badge @TournamentDisplay.BadgeClass(item.Status)">@TournamentDisplay.Label(item.Status)</span> <span class="badge @TournamentDisplay.BadgeClass(item.RegistrationStage)">@TournamentDisplay.Label(item.RegistrationStage)</span></div>
+                <div>
+                    <span class="badge @TournamentDisplay.BadgeClass(item.Status)">@TournamentDisplay.Label(item.Status)</span>
+                    @if (TournamentDisplay.ShowRegistrationStage(item.Status))
+                    {
+                        <span class="badge @TournamentDisplay.BadgeClass(item.RegistrationStage)">@TournamentDisplay.Label(item.RegistrationStage)</span>
+                    }
+                </div>
             </div>
             <div class="d-flex flex-wrap gap-1 my-2">
                 <span class="badge text-bg-light">@modeLabel</span>

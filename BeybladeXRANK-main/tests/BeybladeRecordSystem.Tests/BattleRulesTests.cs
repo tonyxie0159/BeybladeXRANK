@@ -83,6 +83,32 @@ public class BattleRulesTests
     }
 
     [Fact]
+    public async Task RevisingPreviousRound_ReusesImmediateUnscoredRoundWithoutCreatingGap()
+    {
+        await using var setup = await TestBattle.CreateAsync();
+        Assert.True((await setup.Service.RecordBattleResultAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId, setup.PlayerAId, ResultType.Extreme)).Succeeded);
+        var secondRound = (await setup.Service.CompleteRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId)).Value!;
+
+        Assert.True((await setup.Service.ReviseRoundAsync(
+            setup.BattleId, setup.CurrentRoundId, setup.PlayerAId, setup.PlayerAId,
+            ResultType.KnockOut, "首局由極限改為撞出")).Succeeded);
+
+        setup.Db.ChangeTracker.Clear();
+        var rounds = await setup.Db.BattleRounds.Include(x => x.Events)
+            .Where(x => x.BattleId == setup.BattleId)
+            .OrderBy(x => x.RoundNo)
+            .ToListAsync();
+        Assert.Equal(2, rounds.Count);
+        Assert.Equal(secondRound.Id, rounds[1].Id);
+        Assert.Equal(2, rounds[1].RoundNo);
+        Assert.Equal(BattleRoundStatus.InProgress, rounds[1].Status);
+        Assert.Null(rounds[1].CompletedAtUtc);
+        Assert.Empty(rounds[1].Events);
+    }
+
+    [Fact]
     public async Task RevisionOfEarlierRound_InvalidatesAllLaterRounds_AndRestartsAtNextPosition()
     {
         await using var setup = await TestBattle.CreateAsync();
