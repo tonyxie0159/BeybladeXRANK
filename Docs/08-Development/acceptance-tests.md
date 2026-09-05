@@ -15,7 +15,9 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 
 零件功能證據：279 筆冪等匯入、完整組裝、一體式及 CX 結構、名稱快照與通用名稱、新增／補登交易、所有權與防偽、偽造通用名稱忽略；CX 上蓋命名相同時超越／輔助戰刃更換建立新版本，相同組合重用；快速／團體對戰選取指定版本並在重排保留；版本戰績加總、未記錄版本、來源／站位篩選與他人資料禁止存取。舊 SQLite 無 UpperName 仍可讀取。
 
-2026-09-05 隔離 SQLite 測試站瀏覽器驗證：全形「ｚ」找到 Z 輔助戰刃並保存同名 CX v3；缺少軸心阻擋提交、Op 整合固鎖時預覽不含固鎖；先選陀螺再選較舊 v1，密封後仍顯示 v1。390px viewport（可用內容寬 375px）編輯頁與出戰頁無水平溢出。修正搜尋欄位的 Razor 標籤展開並加入 HTTP 回歸測試。PostgreSQL 新版 migration 尚未在實際資料庫套用，Docker engine 未啟動。
+2026-09-05 隔離 SQLite 測試站瀏覽器驗證：全形「ｚ」找到 Z 輔助戰刃並保存同名 CX v3；缺少軸心阻擋提交、Op 整合固鎖時預覽不含固鎖；先選陀螺再選較舊 v1，密封後仍顯示 v1。390px viewport（可用內容寬 375px）編輯頁與出戰頁無水平溢出。修正搜尋欄位的 Razor 標籤展開並加入 HTTP 回歸測試。
+
+2026-09-05 PostgreSQL 零件 migration 驗證：發現 Compose 分別建置 `app` 與 `migrate`，造成新 Web 映像搭配 34 小時前的舊 migration 映像，進而缺少 `BeybladeConfigurations`。兩個服務改為共用同一 `APP_IMAGE` 後，以既有具名 volume 重新建立服務；四筆 migration 全數存在、四張零件／配置表建立、`Parts` 為 279 筆，Web 啟動後沒有新的資料庫例外。
 
 ## 已有自動證據
 
