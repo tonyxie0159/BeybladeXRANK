@@ -11,7 +11,7 @@
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：210 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
+結果：211 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
 
 零件功能證據：279 筆冪等匯入、完整組裝、一體式及 CX 結構、名稱快照與通用名稱、新增／補登交易、所有權與防偽、偽造通用名稱忽略；CX 上蓋命名相同時超越／輔助戰刃更換建立新版本，相同組合重用；快速／團體對戰選取指定版本並在重排保留；版本戰績加總、未記錄版本、來源／站位篩選與他人資料禁止存取。舊 SQLite 無 UpperName 仍可讀取。
 

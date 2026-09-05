@@ -1046,11 +1046,12 @@ public class TournamentServiceTests
         var (tournament, organizer, match) = await fixture.CreateStartedTeamMatchAsync(ruleSet);
         await PartCatalog.ImportAsync(fixture.Db);
         var configurationService = new BeybladeConfigurationService(fixture.Db);
-        var configurationPartIds = await fixture.Db.Parts.Where(x =>
-            (x.Category == PartCategory.Blade && x.Name == "時鐘幻象") ||
-            (x.Category == PartCategory.Ratchet && x.Name == "4-55") ||
-            (x.Category == PartCategory.Bit && x.Name == "S")).Select(x => x.Id).ToArrayAsync();
+        string[] bladeNames = ["時鐘幻象", "地獄鐮刀", "騎士長槍"];
+        string[] ratchetNames = ["4-55", "1-50", "3-60"];
+        string[] bitNames = ["S", "B", "J"];
         var configurationIds = new Dictionary<int, int>();
+        var configurationPartsByUser = new Dictionary<int, int[]>();
+        var duplicateConfigurationIds = new Dictionary<int, int>();
         var participants = match.Participants.OrderBy(x => x.TournamentEntryId).ThenBy(x => x.UserId).ToList();
         Assert.Equal(teamSize * 2, participants.Count);
         Assert.Equal(2, participants.Count(x => x.IsMatchRepresentative));
@@ -1073,13 +1074,43 @@ public class TournamentServiceTests
         {
             var blades = (await fixture.AddBladesAsync(participant.UserId, $"T{participant.UserId}")).Take(bladesPerPlayer).ToList();
             bladesByUser[participant.UserId] = blades;
+            var memberIndex = participants
+                .Where(x => x.TournamentEntryId == participant.TournamentEntryId)
+                .OrderBy(x => x.UserId)
+                .ToList()
+                .IndexOf(participant);
+            var configurationPartIds = await fixture.Db.Parts.Where(x =>
+                (x.Category == PartCategory.Blade && x.Name == bladeNames[memberIndex]) ||
+                (x.Category == PartCategory.Ratchet && x.Name == ratchetNames[memberIndex]) ||
+                (x.Category == PartCategory.Bit && x.Name == bitNames[memberIndex])).Select(x => x.Id).ToArrayAsync();
+            configurationPartsByUser[participant.UserId] = configurationPartIds;
             Assert.True((await configurationService.RecordAsync(participant.UserId, blades[0], configurationPartIds)).Succeeded);
             configurationIds[blades[0]] = await fixture.Db.BeybladeConfigurations.Where(x => x.BeybladeId == blades[0]).Select(x => x.Id).SingleAsync();
             var variant = await fixture.Db.Parts.Where(x => configurationPartIds.Contains(x.Id) && x.Category != PartCategory.Bit).Select(x => x.Id).ToListAsync();
-            variant.Add(await fixture.Db.Parts.Where(x => x.Category == PartCategory.Bit && x.Name == "J").Select(x => x.Id).SingleAsync());
+            variant.Add(await fixture.Db.Parts.Where(x => x.Category == PartCategory.Bit && x.Name == "A").Select(x => x.Id).SingleAsync());
             Assert.True((await configurationService.RecordAsync(participant.UserId, blades[0], variant)).Succeeded);
             if (participant == participants[^1])
                 configurationIds[blades[0]] = (await configurationService.GetMineAsync(participant.UserId, blades[0]))!.Id;
+        }
+        foreach (var team in participants.GroupBy(x => x.TournamentEntryId))
+        {
+            var teammates = team.OrderBy(x => x.UserId).ToList();
+            if (teammates.Count < 2) continue;
+            var second = teammates[1];
+            var bladeId = bladesByUser[second.UserId][0];
+            var firstParts = configurationPartsByUser[teammates[0].UserId];
+            var secondParts = configurationPartsByUser[second.UserId];
+            var duplicateParts = await fixture.Db.Parts
+                .Where(x =>
+                    (secondParts.Contains(x.Id) && x.Category == PartCategory.Blade) ||
+                    (firstParts.Contains(x.Id) && x.Category != PartCategory.Blade))
+                .Select(x => x.Id)
+                .ToArrayAsync();
+            Assert.True((await configurationService.RecordAsync(
+                second.UserId,
+                bladeId,
+                duplicateParts)).Succeeded);
+            duplicateConfigurationIds[bladeId] = (await configurationService.GetMineAsync(second.UserId, bladeId))!.Id;
         }
         foreach (var participant in participants)
         {
@@ -1088,6 +1119,15 @@ public class TournamentServiceTests
             var foreignVersions = selectedVersions.ToArray();
             foreignVersions[0] = configurationIds[bladesByUser[participants.First(x => x.UserId != participant.UserId).UserId][0]];
             Assert.False((await fixture.MatchService.SubmitLineupAsync(match.Id, participant.UserId, selectedBlades, foreignVersions)).Succeeded);
+            if (duplicateConfigurationIds.TryGetValue(selectedBlades[0], out var duplicateConfigurationId))
+            {
+                var duplicatedVersions = selectedVersions.ToArray();
+                duplicatedVersions[0] = duplicateConfigurationId;
+                var duplicated = await fixture.MatchService.SubmitLineupAsync(
+                    match.Id, participant.UserId, selectedBlades, duplicatedVersions);
+                Assert.False(duplicated.Succeeded);
+                Assert.Contains("不可重複使用零件", duplicated.Error);
+            }
             Assert.True((await fixture.MatchService.SubmitLineupAsync(match.Id, participant.UserId, selectedBlades, selectedVersions)).Succeeded);
             if (participant != participants[^1])
             {

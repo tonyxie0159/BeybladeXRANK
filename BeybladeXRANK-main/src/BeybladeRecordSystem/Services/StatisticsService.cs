@@ -8,6 +8,8 @@ namespace BeybladeRecordSystem.Services;
 
 public class StatisticsService(AppDbContext db)
 {
+    private const int VersionInsightMinimumRounds = 5;
+
     // Kept for compatibility with callers that expect the original quick-battle summary.
     public Task<UserSummaryViewModel> GetUserSummaryAsync(int userId) =>
         GetPlayerBattleSummaryAsync(userId, BattleSourceType.Quick, StatisticsSideFilter.All);
@@ -122,13 +124,70 @@ public class StatisticsService(AppDbContext db)
         int? Version(BattleRound round) => round.PlayerAId == userId ? round.Lineup.PlayerAConfigurationId : round.Lineup.PlayerBConfigurationId;
         var rows = blade.Configurations.OrderByDescending(x => x.VersionNo).Select(version =>
             new BeybladeVersionStatisticsRow(version.Id, version.VersionLabel, version.PartsSummary,
-                BuildBeybladeSummary(userId, beybladeId, version.VersionLabel, rounds.Where(x => Version(x) == version.Id).ToList()))).ToList();
+                BuildBeybladeSummary(userId, beybladeId, version.VersionLabel, rounds.Where(x => Version(x) == version.Id).ToList()), [])).ToList();
         var unknown = rounds.Where(x => Version(x) is null).ToList();
         if (unknown.Count > 0)
             rows.Add(new(null, "未記錄版本", "當時未記錄零件，保留於總戰績。",
-                BuildBeybladeSummary(userId, beybladeId, "未記錄版本", unknown)));
+                BuildBeybladeSummary(userId, beybladeId, "未記錄版本", unknown),
+                [new("info", "這些小局沒有固定配置資料，因此不產生版本優缺點判讀。")]));
+
+        var comparable = rows
+            .Where(x => x.ConfigurationId.HasValue && x.Summary.RoundCount >= VersionInsightMinimumRounds)
+            .ToList();
+        var bestConfigurationId = comparable.Count < 2
+            ? null
+            : comparable.OrderByDescending(x => x.Summary.WinRate)
+                .ThenByDescending(x => x.Summary.ScoreDifference)
+                .ThenByDescending(x => x.Summary.RoundCount)
+                .First().ConfigurationId;
+        rows = rows.Select(row => row.ConfigurationId.HasValue
+            ? row with { Insights = BuildVersionInsights(row.Summary, bestConfigurationId == row.ConfigurationId, comparable.Count >= 2) }
+            : row).ToList();
         return new(blade.Name, blade.UpperName,
             BuildBeybladeSummary(userId, beybladeId, blade.Name, rounds), rows);
+    }
+
+    private static IReadOnlyList<BeybladePerformanceInsight> BuildVersionInsights(
+        BeybladeStatisticsViewModel stats,
+        bool isBestComparableVersion,
+        bool hasComparableVersions)
+    {
+        if (stats.RoundCount < VersionInsightMinimumRounds)
+        {
+            var remaining = VersionInsightMinimumRounds - stats.RoundCount;
+            return [new("info", $"目前 {stats.RoundCount} 局，再累積 {remaining} 局後顯示優缺點摘要。")];
+        }
+
+        var insights = new List<BeybladePerformanceInsight>();
+        if (stats.Wins + stats.Losses >= VersionInsightMinimumRounds)
+        {
+            if (stats.WinRate >= .6m)
+                insights.Add(new("success", $"優勢：目前勝率 {stats.WinRate:P0}。"));
+            else if (stats.WinRate <= .4m)
+                insights.Add(new("warning", $"留意：目前勝率 {stats.WinRate:P0}。"));
+        }
+
+        if (stats.ScoreDifference > 0)
+            insights.Add(new("success", $"優勢：累計得失分差 +{stats.ScoreDifference}。"));
+        else if (stats.ScoreDifference < 0)
+            insights.Add(new("warning", $"留意：累計得失分差 {stats.ScoreDifference}。"));
+        else
+            insights.Add(new("info", "目前累計得分與失分持平。"));
+
+        if (stats.BSide.Samples >= 3 && stats.XSide.Samples >= 3 &&
+            Math.Abs(stats.BSide.WinRate - stats.XSide.WinRate) >= .2m)
+        {
+            var betterSide = stats.BSide.WinRate > stats.XSide.WinRate ? "B Side" : "X Side";
+            var betterRate = Math.Max(stats.BSide.WinRate, stats.XSide.WinRate);
+            var weakerSide = betterSide == "B Side" ? "X Side" : "B Side";
+            var weakerRate = Math.Min(stats.BSide.WinRate, stats.XSide.WinRate);
+            insights.Add(new("info", $"站位差異：{betterSide} 勝率 {betterRate:P0}，{weakerSide} 為 {weakerRate:P0}。"));
+        }
+
+        if (hasComparableVersions && isBestComparableVersion)
+            insights.Add(new("success", "比較目前樣本達標的版本，這個版本勝率最高。"));
+
+        return insights;
     }
 
     private static BeybladeStatisticsViewModel BuildBeybladeSummary(int userId, int beybladeId, string name, List<BattleRound> myRounds)

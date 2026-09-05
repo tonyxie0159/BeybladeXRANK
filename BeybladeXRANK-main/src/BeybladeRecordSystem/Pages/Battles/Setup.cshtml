@@ -29,11 +29,19 @@
         <form method="post" asp-page-handler="SubmitLineup" class="card card-body">
             <h2 class="h5">密封提交你的三顆陀螺</h2>
             <p class="text-muted">順位會在雙方都提交後同時公開。你不能替對手選擇。</p>
+            @if (Model.Workspace.RecentLineup.Count == 3)
+            {
+                <div class="mb-3"><button type="button" class="btn btn-outline-primary" data-apply-recent-lineup>套用最近陣容</button><small class="d-block text-muted mt-1" data-recent-lineup-status aria-live="polite">帶入上次出戰的三顆陀螺與固定版本，送出前仍可調整。</small></div>
+            }
+            <div asp-validation-summary="All" class="text-danger" role="alert"></div>
             @for (var index = 0; index < 3; index++)
             {
-                <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(index + 1, Model.Workspace.AvailableBeyblades)" />
+                var selectedBladeId = index < Model.BladeIds.Count ? Model.BladeIds[index] : (int?)null;
+                var selectedConfigurationId = index < Model.ConfigurationIds.Count ? Model.ConfigurationIds[index] : (int?)null;
+                var recent = index < Model.Workspace.RecentLineup.Count ? Model.Workspace.RecentLineup[index] : null;
+                <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(index + 1, Model.Workspace.AvailableBeyblades, selectedBladeId, selectedConfigurationId, recent?.BeybladeId, recent?.ConfigurationId)" />
             }
-            <div><button class="btn btn-primary">密封提交</button> <a asp-page="/Beyblades/Create" asp-route-returnUrl="/Battles/Setup/@battle.Id" class="btn btn-outline-primary">先新增陀螺</a></div>
+            <div><button class="btn btn-primary" data-lineup-submit>密封提交</button> <a asp-page="/Beyblades/Create" asp-route-returnUrl="/Battles/Setup/@battle.Id" class="btn btn-outline-primary">先新增陀螺</a></div>
         </form>
     }
 }
@@ -70,7 +78,7 @@ else if (battle.Status == BattleStatus.LineupLocked)
     <div class="alert alert-success">雙方已確認，陣容已鎖定。</div>
     @if (isCreator)
     {
-        <form method="post" asp-page-handler="AssignSide" class="card card-body col-lg-7"><label asp-for="SideA" class="form-label">指定 @battle.PlayerA.DisplayName 的 Side</label><select asp-for="SideA" class="form-select mb-3"><option value="B">B Side（藍）</option><option value="X">X Side（紅）</option></select><button class="btn btn-primary">確認 B/X Side</button></form>
+        <form method="post" asp-page-handler="Start" class="card card-body col-lg-7"><label asp-for="SideA" class="form-label">指定 @battle.PlayerA.DisplayName 的 Side</label><select asp-for="SideA" class="form-select mb-3"><option value="B">B Side（藍）</option><option value="X">X Side（紅）</option></select><button class="btn btn-primary btn-lg">指定 Side 並開始第一局</button></form>
     }
     else { <div class="alert alert-info">等待建立者裁判指定 B/X Side。</div> }
 }

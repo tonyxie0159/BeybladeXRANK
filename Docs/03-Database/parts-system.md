@@ -68,6 +68,8 @@ BeybladeConfigurationService 提供 GetActivePartsAsync、GetMineAsync（最新�
 
 快速對戰與 Tournament 都先選陀螺，再選版本，預帶最新版本並顯示完整零件摘要。每個位置提交 BladeIds 與相同順序的 ConfigurationIds；Server 確認版本屬於該陀螺、該陀螺屬於登入者且未刪除。同顆陀螺的不同版本不能占用同一陣容的多個位置。
 
+已登錄配置的陣容依 `PartId` 檢查同側全隊，任何零件出現兩次即拒絕整次提交；跨類別同名零件仍因 `PartId` 不同而分開判定，對手可使用相同零件。Tournament 團體賽會連同已提交隊友的版本一起檢查。PostgreSQL 提交交易先取得對戰／對局範圍 advisory lock，讓同隊並行提交依序檢查，避免兩份衝突陣容同時通過。
+
 BattleLineupSelection.BeybladeConfigurationId 與 BattleLineup.PlayerAConfigurationId／PlayerBConfigurationId 均以「配置 Id＋陀螺 Id」外鍵連接。Round 由 LineupId 取得當場版本。
 
 - 初次提交保存選定版本及「自訂名稱 · vN · 通用名稱」快照；名稱欄位擴至 varchar(520)，容納版本編號。
@@ -104,5 +106,5 @@ Migration 順序：
 
 ## 後續工作邊界
 
-同側全隊 PartId 去重、跨隊友並行衝突檢查，以及新對戰強制完整配置另案接入；目前不變更舊對戰可續打的條件。收藏三顆完整陣容、手動歸戶舊陀螺、版本封存及自訂預設版本尚未加入。本階段預帶最高 VersionNo，玩家仍可選擇任一既有版本。
+新對戰強制完整配置仍另案接入；目前保留未配置舊陀螺的相容出戰方式，也不變更舊對戰可續打的條件。收藏三顆完整陣容、手動歸戶舊陀螺、版本封存及自訂預設版本尚未加入。本階段預帶最高 VersionNo，玩家仍可選擇任一既有版本。
 

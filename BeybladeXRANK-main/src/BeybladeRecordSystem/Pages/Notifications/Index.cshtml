@@ -38,7 +38,7 @@ else
                 <a asp-page="/Notifications/Index" asp-page-handler="Open" asp-route-id="@item.Id" class="notification-copy">
                     <strong>@item.Title</strong>
                     <span>@item.Message</span>
-                    <small>@item.CreatedAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small>
+                    <small><time datetime="@item.CreatedAtUtc.ToString("O")" data-local-datetime>@item.CreatedAtUtc.ToString("yyyy/MM/dd HH:mm") UTC</time></small>
                 </a>
                 @if (item.ResolvedAtUtc is null && item.ActionType != UserNotificationActionType.None)
                 {

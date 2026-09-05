@@ -22,6 +22,21 @@
         wrapper.append(table);
     });
 
+    const localDateTimeFormatter = new Intl.DateTimeFormat("zh-TW", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    document.querySelectorAll("time[data-local-datetime]").forEach(element => {
+        const date = new Date(element.dateTime);
+        if (Number.isNaN(date.getTime())) return;
+        element.textContent = localDateTimeFormatter.format(date);
+        if (timeZone) element.title = timeZone;
+    });
+
     const restoreSubmissionState = form => {
         delete form.dataset.submitting;
         form.querySelectorAll("button[data-submit-lock='true']").forEach(button => {
