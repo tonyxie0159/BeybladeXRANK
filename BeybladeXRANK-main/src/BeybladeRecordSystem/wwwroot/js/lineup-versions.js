@@ -18,12 +18,14 @@
         const versionSearch = picker.querySelector('[data-version-search]');
         const blades = [...blade.options].map(x => x.cloneNode(true));
         const versions = [...version.options].filter(x => x.dataset.bladeId).map(x => x.cloneNode(true));
-        bladeSearch.hidden = versionSearch.hidden = false;
+        bladeSearch.hidden = blades.filter(x => x.value).length <= 7;
         const summary = () => picker.querySelector('[data-version-summary]').textContent =
             version.selectedOptions[0]?.dataset.summary || '';
         const filterVersions = reset => {
             const selected = reset ? '' : version.value;
-            const choices = versions.filter(x => x.dataset.bladeId === blade.value &&
+            const bladeVersions = versions.filter(x => x.dataset.bladeId === blade.value);
+            versionSearch.hidden = !blade.value || bladeVersions.length <= 4;
+            const choices = bladeVersions.filter(x =>
                 (x.value === selected || matches(x.textContent + ' ' + x.dataset.summary, versionSearch.value)));
             version.replaceChildren(new Option(blade.value ? '請選擇版本' : '請先選擇陀螺', ''),
                 ...choices.map(x => x.cloneNode(true)));

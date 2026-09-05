@@ -455,6 +455,57 @@ public class QuickBattleFlowTests
             x => x.BattleId == nextBattle && x.BeybladeId == bladeId)).BeybladeNameSnapshot);
     }
 
+    [Fact]
+    public async Task ConfiguredLineup_RejectsDuplicateParts_AndAcceptsDistinctVersions()
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+        await PartCatalog.ImportAsync(fixture.Db);
+        var configurations = new BeybladeConfigurationService(fixture.Db);
+
+        async Task<int> RecordAsync(int bladeId, string bladeName, string ratchetName, string bitName)
+        {
+            var partIds = await fixture.Db.Parts
+                .Where(x =>
+                    (x.Category == PartCategory.Blade && x.Name == bladeName) ||
+                    (x.Category == PartCategory.Ratchet && x.Name == ratchetName) ||
+                    (x.Category == PartCategory.Bit && x.Name == bitName))
+                .Select(x => x.Id)
+                .ToArrayAsync();
+            Assert.Equal(3, partIds.Length);
+            Assert.True((await configurations.RecordAsync(fixture.PlayerA.Id, bladeId, partIds)).Succeeded);
+            return await fixture.Db.BeybladeConfigurations
+                .Where(x => x.BeybladeId == bladeId)
+                .OrderByDescending(x => x.VersionNo)
+                .Select(x => x.Id)
+                .FirstAsync();
+        }
+
+        var first = await RecordAsync(fixture.PlayerABladeIds[0], "時鐘幻象", "1-50", "J");
+        var duplicated = await RecordAsync(fixture.PlayerABladeIds[1], "地獄鐮刀", "1-50", "S");
+        var third = await RecordAsync(fixture.PlayerABladeIds[2], "騎士長槍", "3-60", "B");
+        var rejectedBattleId = await fixture.CreateAcceptedBattleAsync();
+
+        var rejected = await fixture.Flow.SubmitLineupAsync(
+            rejectedBattleId,
+            fixture.PlayerA.Id,
+            fixture.PlayerABladeIds,
+            [first, duplicated, third]);
+
+        Assert.False(rejected.Succeeded);
+        Assert.Contains("1-50", rejected.Error);
+        Assert.Empty(await fixture.Db.BattleLineupSelections
+            .Where(x => x.BattleId == rejectedBattleId && x.UserId == fixture.PlayerA.Id)
+            .ToListAsync());
+
+        var distinct = await RecordAsync(fixture.PlayerABladeIds[1], "地獄鐮刀", "2-60", "S");
+        var acceptedBattleId = await fixture.CreateAcceptedBattleAsync();
+        Assert.True((await fixture.Flow.SubmitLineupAsync(
+            acceptedBattleId,
+            fixture.PlayerA.Id,
+            fixture.PlayerABladeIds,
+            [first, distinct, third])).Succeeded);
+    }
+
     private sealed class QuickBattleFixture : IAsyncDisposable
     {
         private readonly SqliteConnection connection;

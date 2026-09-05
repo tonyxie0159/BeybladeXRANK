@@ -291,6 +291,7 @@ public class QuickBattleFlowService(
             return ServiceResult.Failure("必須依序選擇三顆不同的陀螺。");
 
         await using var transaction = await db.Database.BeginTransactionAsync();
+        await LineupPartRules.AcquireSubmissionLockAsync(db, battleId);
         var battle = await QuickBattleQuery().SingleOrDefaultAsync(x => x.Id == battleId);
         if (battle is null) return ServiceResult.Failure("找不到快速對戰。");
         if (!IsParticipant(battle, userId)) return ServiceResult.Failure("你不是這場快速對戰的玩家。");
@@ -312,6 +313,8 @@ public class QuickBattleFlowService(
         if (blades.Count != 3) return ServiceResult.Failure("所選陀螺必須屬於你且尚未刪除。");
         var versions = LineupVersions.Resolve(orderedBladeIds, configurationIds, blades);
         if (!versions.Succeeded) return ServiceResult.Failure(versions.Error!);
+        var partValidation = LineupPartRules.ValidateNoDuplicates(versions.Value!.Values);
+        if (!partValidation.Succeeded) return partValidation;
         var displayName = userId == battle.PlayerAId ? battle.PlayerA.DisplayName : battle.PlayerB.DisplayName;
         var now = DateTime.UtcNow;
         for (var index = 0; index < orderedBladeIds.Count; index++)
