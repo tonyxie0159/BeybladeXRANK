@@ -198,6 +198,65 @@ details > summary { cursor: pointer; }
 .player-search-option { width: 100%; min-height: 44px; padding: .65rem .8rem; color: var(--text); background: transparent; border: 0; border-bottom: 1px solid var(--line); text-align: left; }
 .player-search-option:hover, .player-search-option:focus { background: var(--surface-soft); }
 
+.statistics-page { display: grid; gap: 1.25rem; }
+.statistics-heading { margin-bottom: 0; }
+.statistics-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
+.statistics-tab { min-height: 72px; display: flex; flex-direction: column; justify-content: center; padding: .9rem 1rem; color: var(--muted); background: rgba(17, 23, 37, .72); border: 1px solid var(--line); border-radius: .7rem; text-decoration: none; transition: border-color .16s ease, background-color .16s ease, transform .16s ease; }
+.statistics-tab strong { color: var(--text); font-size: 1rem; }
+.statistics-tab small { margin-top: .15rem; }
+.statistics-tab:hover, .statistics-tab:focus { color: white; background: var(--surface-soft); border-color: #66738b; transform: translateY(-1px); }
+.statistics-tab.is-active { background: linear-gradient(145deg, rgba(239, 35, 60, .2), rgba(23, 30, 46, .96)); border-color: rgba(239, 35, 60, .75); box-shadow: inset 3px 0 0 var(--electric); }
+.statistics-view-picker, .statistics-opponent-picker { padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: .7rem; }
+.statistics-view-picker .form-label, .statistics-opponent-picker .form-label { margin-bottom: .45rem; font-size: .82rem; }
+.statistics-panel { min-width: 0; padding: clamp(1rem, 3vw, 1.5rem); background: rgba(17, 23, 37, .74); border: 1px solid var(--line); border-radius: .85rem; box-shadow: var(--shadow); }
+.statistics-panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 1.25rem; margin-bottom: 1.25rem; }
+.statistics-panel-heading h2 { margin: 0; font-size: clamp(1.25rem, 3vw, 1.6rem); }
+.statistics-panel-heading p { max-width: 650px; margin: .35rem 0 0; color: var(--muted); }
+.statistics-kicker { color: var(--electric) !important; font-size: .68rem; font-weight: 900; letter-spacing: .18em; }
+.statistics-filter-form { min-width: min(100%, 600px); display: grid; grid-template-columns: repeat(3, minmax(135px, 1fr)); gap: .65rem; padding: .85rem; background: rgba(9, 13, 26, .62); border: 1px solid var(--line); border-radius: .65rem; }
+.statistics-filter-form .form-label { margin-bottom: .3rem; font-size: .72rem; }
+.statistics-filter-form .form-select { min-height: 42px; font-size: .86rem; }
+.statistics-table { min-width: 780px; }
+.statistics-table tbody strong { color: white; }
+.statistics-mobile-cards { display: grid; gap: .8rem; }
+.statistics-summary-card { padding: 1rem; background: linear-gradient(145deg, var(--surface-raised), var(--surface)); border: 1px solid var(--line); border-radius: .7rem; }
+.statistics-summary-card > header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--line); }
+.statistics-summary-card h3 { margin: 0; font-size: 1rem; line-height: 1.4; }
+.statistics-summary-card header > strong { color: white; font-size: 1.55rem; line-height: 1; }
+.statistics-blade-card header p { margin: 0 0 .2rem; color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.statistics-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1rem; margin: .9rem 0 0; }
+.statistics-metrics div { min-width: 0; }
+.statistics-metrics dt { color: var(--muted); font-size: .7rem; font-weight: 700; }
+.statistics-metrics dd { margin: .15rem 0 0; color: var(--text); font-weight: 800; overflow-wrap: anywhere; }
+.statistics-metrics-primary { padding-bottom: .9rem; }
+.statistics-details summary { min-height: 44px; display: flex; align-items: center; color: #8bd8ff; font-weight: 700; cursor: pointer; }
+.statistics-details[open] summary { margin-bottom: .65rem; }
+.statistics-details p { max-width: 480px; margin: .45rem 0 0; color: var(--muted); font-size: .78rem; white-space: normal; }
+.statistics-result-types { padding-top: .75rem; border-top: 1px solid var(--line); line-height: 1.7; }
+.statistics-subtabs { gap: .5rem; padding: .35rem; background: rgba(9, 13, 26, .62); border: 1px solid var(--line); border-radius: .65rem; }
+.statistics-subtabs a { min-height: 44px; display: inline-flex; align-items: center; padding: .55rem .9rem; color: var(--muted); border-radius: .45rem; text-decoration: none; font-weight: 700; }
+.statistics-subtabs a:hover, .statistics-subtabs a:focus { color: white; background: var(--surface-soft); }
+.statistics-subtabs a.is-active { color: white; background: var(--electric-dark); }
+.statistics-opponent-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .75rem; padding: 1rem; color: var(--text); background: var(--surface-raised); border: 1px solid var(--line); border-radius: .7rem; text-decoration: none; }
+.statistics-opponent-card:hover, .statistics-opponent-card:focus { color: white; background: var(--surface-soft); border-color: #66738b; }
+.statistics-opponent-card div { min-width: 0; display: flex; flex-direction: column; }
+.statistics-opponent-card small, .statistics-opponent-card span { color: var(--muted); }
+.statistics-opponent-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statistics-opponent-rate { color: white !important; font-size: 1.25rem; font-weight: 900; }
+.statistics-card-arrow { color: var(--electric) !important; font-size: 1.35rem; }
+.statistics-history-list { display: grid; gap: .75rem; }
+.statistics-history-item { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: .65rem; text-decoration: none; }
+.statistics-history-item.is-win { border-left-color: var(--success); }
+.statistics-history-item.is-loss { border-left-color: var(--electric); }
+.statistics-history-item:hover, .statistics-history-item:focus { color: white; background: var(--surface-soft); }
+.statistics-history-main { min-width: 0; display: grid; gap: .35rem; }
+.statistics-history-main > strong { overflow-wrap: anywhere; }
+.statistics-history-main time { color: var(--muted); font-size: .72rem; }
+.statistics-history-badges { display: flex; flex-wrap: wrap; gap: .35rem; }
+.statistics-history-result { flex: 0 0 auto; display: flex; align-items: center; gap: .7rem; }
+.statistics-history-result span { color: var(--muted); font-size: .78rem; font-weight: 800; }
+.statistics-history-result strong { font-size: 1.35rem; white-space: nowrap; }
+
 @media (max-width: 767.98px) {
   body:has(.mobile-dock) { padding-bottom: 72px; }
   .navbar { min-height: 68px; }.notification-nav { order: 2; margin-left: auto; }.navbar-toggler { order: 3; margin-left: .35rem; }.navbar-collapse { order: 4; flex-basis: 100%; padding: 1rem 0; }.nav-action { width: 100%; margin-top: .4rem; }
@@ -212,6 +271,11 @@ details > summary { cursor: pointer; }
   .hero-copy { display: flex; flex-direction: column; align-items: center; }.hero-visual { width: min(100%, 430px); margin: -1rem auto 0; order: -1; }.hero-features { justify-content: center; }
   .home-shell { padding-top: 2rem; }.welcome-panel { grid-template-columns: 1fr; padding: 2rem; }.arena-graphic { display: none; }
   .action-grid { grid-template-columns: 1fr; }.action-card { min-height: 120px; }
+  .statistics-page { gap: 1rem; }
+  .statistics-panel { padding: 1rem; box-shadow: none; }
+  .statistics-panel-heading { align-items: stretch; flex-direction: column; margin-bottom: 1rem; }
+  .statistics-filter-form { min-width: 0; grid-template-columns: 1fr; width: 100%; }
+  .statistics-history-item { align-items: stretch; }
 }
 @media (max-width: 575.98px) {
   .container { padding-left: 1.1rem; padding-right: 1.1rem; }.brand-copy strong { font-size: .82rem; }
@@ -227,6 +291,11 @@ details > summary { cursor: pointer; }
   .score-side .score-value { grid-column: 1; grid-row: auto; font-size: 2.7rem; }
   .score-side > strong { font-size: .8rem; }
   .score-divider small { max-width: 3.2rem; text-align: center; }
+  .statistics-heading .eyebrow { margin-bottom: .5rem; }
+  .statistics-view-picker { position: sticky; z-index: 8; top: .5rem; box-shadow: 0 10px 25px rgba(0,0,0,.3); }
+  .statistics-metrics { gap: .7rem; }
+  .statistics-history-item { flex-direction: column; }
+  .statistics-history-result { justify-content: space-between; padding-top: .65rem; border-top: 1px solid var(--line); }
 }
 
 @media (prefers-reduced-motion: reduce) {

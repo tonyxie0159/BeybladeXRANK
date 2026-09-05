@@ -133,6 +133,8 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 
 2026-08-21 UI 本機瀏覽器證據：公開首頁在 1280px 桌面及 390px 手機 viewport 均無水平溢出，手機導覽可展開；展開時 toggle 的可存取名稱由「開啟導覽選單」切換為「關閉導覽選單」，收合時恢復。新增 HTTP regression test 固定 layout 的雙狀態標籤及對應 Bootstrap collapse behavior script。
 
+2026-09-03 Statistics UI 本機瀏覽器證據：`test1` 於 Docker Production container 驗證 1280px 桌面分頁列，以及 390px 手機「總覽／我的陀螺／對手／歷史」下拉切換、個人來源篩選、對手來源切換與各檢視空狀態；全部檢視無整頁水平溢出，瀏覽器 console 無 error／warning。新增 HTTP regression test 固定目前檢視的 query string 正規化、只呈現所選檢視、手機摘要卡與來源選擇狀態；完整測試 170 passed。Docker image `beybladexrank-main-app:latest` 重建成功，container migration 為最新且 `http://localhost:8080/` 回應 200。
+
 - [ ] 快速邀請、私密提交、edit request、Side、計分、重排、Revision、棄權與取消以兩個帳號操作。
 - [ ] Tournament 個人、雙人六顆／四顆、三人 4／5 分制以多帳號完成至少一場。
 - [ ] 手機與平板尺寸不水平溢出，重要裁判按鈕可安全操作且不只依顏色傳達狀態。

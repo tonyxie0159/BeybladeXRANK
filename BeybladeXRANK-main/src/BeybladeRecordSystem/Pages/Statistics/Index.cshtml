@@ -1,131 +1,82 @@
 @page
 @using BeybladeRecordSystem.Domain.Enums
 @model BeybladeRecordSystem.Pages.Statistics.IndexModel
-@{ ViewData["Title"] = "我的戰績"; }
+@{
+    ViewData["Title"] = "我的戰績";
+    var sections = new[]
+    {
+        new { Key = "overview", Label = "總覽", Description = "個人分項" },
+        new { Key = "blades", Label = "我的陀螺", Description = "陀螺表現" },
+        new { Key = "opponents", Label = "對手", Description = "交手紀錄" },
+        new { Key = "history", Label = "歷史", Description = "完成對戰" }
+    };
+}
 
-<header class="page-header"><div><p class="eyebrow">PERFORMANCE</p><h1>我的戰績</h1><p>各對戰來源分開計算；B／X Side 依開賽前鎖定的站位即時計算。</p></div></header>
-
-<section class="mb-4">
-    <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-2">
+<div class="statistics-page">
+    <header class="page-header statistics-heading">
         <div>
-            <h2 class="h4 mb-1">個人分項戰績</h2>
-            <p class="text-muted mb-0">團體賽的隊伍結果與實際上場小局維持分列。</p>
+            <p class="eyebrow">PERFORMANCE</p>
+            <h1>我的戰績</h1>
+            <p>一次專注一類資訊；所有數據仍依對戰來源與開賽前鎖定的 B／X Side 即時計算。</p>
         </div>
-        <form method="get" class="row g-2">
-            <input type="hidden" name="source" value="@Model.Source" />
-            <input type="hidden" name="side" value="@Model.Side" />
-            <input type="hidden" name="sort" value="@Model.Sort" />
-            <div class="col-sm-auto">
-                <label for="personalSource" class="form-label small mb-1">資料來源</label>
-                <select id="personalSource" name="personalSource" class="form-select" onchange="this.form.submit()">
-                    <option value="all" selected="@(Model.PersonalSource == "all")">全部分項</option>
-                    <option value="quick" selected="@(Model.PersonalSource == "quick")">快速對戰</option>
-                    <option value="individual" selected="@(Model.PersonalSource == "individual")">個人賽</option>
-                    <option value="team" selected="@(Model.PersonalSource == "team")">團體賽</option>
-                </select>
-            </div>
-            <div class="col-sm-auto">
-                <label for="personalSide" class="form-label small mb-1">站位篩選</label>
-                <select id="personalSide" name="personalSide" class="form-select" onchange="this.form.submit()">
-                    <option value="all" selected="@(Model.PersonalSide == "all")">B＋X Side</option>
-                    <option value="b" selected="@(Model.PersonalSide == "b")">只看 B Side</option>
-                    <option value="x" selected="@(Model.PersonalSide == "x")">只看 X Side</option>
-                </select>
-            </div>
-            <div class="col-sm-auto">
-                <label for="personalSort" class="form-label small mb-1">排序</label>
-                <select id="personalSort" name="personalSort" class="form-select" onchange="this.form.submit()">
-                    <option value="winrate-desc" selected="@(Model.PersonalSort == "winrate-desc")">勝率：高到低</option>
-                    <option value="winrate-asc" selected="@(Model.PersonalSort == "winrate-asc")">勝率：低到高</option>
-                    <option value="score-desc" selected="@(Model.PersonalSort == "score-desc")">得分：高到低</option>
-                    <option value="score-asc" selected="@(Model.PersonalSort == "score-asc")">得分：低到高</option>
-                    <option value="against-desc" selected="@(Model.PersonalSort == "against-desc")">失分：高到低</option>
-                    <option value="against-asc" selected="@(Model.PersonalSort == "against-asc")">失分：低到高</option>
-                    <option value="difference-desc" selected="@(Model.PersonalSort == "difference-desc")">得失分差：高到低</option>
-                    <option value="difference-asc" selected="@(Model.PersonalSort == "difference-asc")">得失分差：低到高</option>
-                    <option value="b-winrate-desc" selected="@(Model.PersonalSort == "b-winrate-desc")">B Side 勝率：高到低</option>
-                    <option value="b-winrate-asc" selected="@(Model.PersonalSort == "b-winrate-asc")">B Side 勝率：低到高</option>
-                    <option value="x-winrate-desc" selected="@(Model.PersonalSort == "x-winrate-desc")">X Side 勝率：高到低</option>
-                    <option value="x-winrate-asc" selected="@(Model.PersonalSort == "x-winrate-asc")">X Side 勝率：低到高</option>
-                </select>
-            </div>
-        </form>
-    </div>
-    <div class="table-responsive mt-3">
-        <table class="table align-middle">
-            <thead><tr><th>分項</th><th>勝／敗</th><th>勝率</th><th>得／失分</th><th>得失分差</th><th>B Side</th><th>X Side</th><th>失誤失分</th></tr></thead>
-            <tbody>
-            @foreach (var row in Model.PersonalRows)
+    </header>
+
+    <nav class="statistics-tabs d-none d-md-grid" aria-label="戰績資訊分類">
+        @foreach (var navItem in sections)
+        {
+            <a asp-page="/Statistics/Index"
+               asp-route-view="@navItem.Key"
+               asp-route-source="@Model.Source"
+               asp-route-side="@Model.Side"
+               asp-route-sort="@Model.Sort"
+               asp-route-personalSource="@Model.PersonalSource"
+               asp-route-personalSide="@Model.PersonalSide"
+               asp-route-personalSort="@Model.PersonalSort"
+               asp-route-opponentSource="@Model.OpponentSource"
+               class="statistics-tab @(Model.View == navItem.Key ? "is-active" : string.Empty)"
+               aria-current="@(Model.View == navItem.Key ? "page" : null)">
+                <strong>@navItem.Label</strong>
+                <small>@navItem.Description</small>
+            </a>
+        }
+    </nav>
+
+    <form method="get" class="statistics-view-picker d-md-none">
+        <input type="hidden" name="source" value="@Model.Source" />
+        <input type="hidden" name="side" value="@Model.Side" />
+        <input type="hidden" name="sort" value="@Model.Sort" />
+        <input type="hidden" name="personalSource" value="@Model.PersonalSource" />
+        <input type="hidden" name="personalSide" value="@Model.PersonalSide" />
+        <input type="hidden" name="personalSort" value="@Model.PersonalSort" />
+        <input type="hidden" name="opponentSource" value="@Model.OpponentSource" />
+        <label for="statisticsView" class="form-label">目前顯示</label>
+        <select id="statisticsView" name="view" class="form-select" onchange="this.form.submit()">
+            @foreach (var navItem in sections)
             {
-                <tr>
-                    <td class="fw-semibold">@row.Label</td>
-                    <td>@row.Summary.Wins / @row.Summary.Losses</td>
-                    <td>@row.Summary.WinRate.ToString("P0")</td>
-                    <td>@row.Summary.Score / @row.Summary.AgainstScore</td>
-                    <td class="@(row.Summary.ScoreDifference >= 0 ? "text-success" : "text-danger")">@row.Summary.ScoreDifference</td>
-                    <td>@row.Summary.BSide.Wins / @row.Summary.BSide.Losses（@row.Summary.BSide.WinRate.ToString("P0")）</td>
-                    <td>@row.Summary.XSide.Wins / @row.Summary.XSide.Losses（@row.Summary.XSide.WinRate.ToString("P0")）</td>
-                    <td>@row.Summary.LaunchFaultAgainstScore</td>
-                </tr>
+                <option value="@navItem.Key" selected="@(Model.View == navItem.Key)">@navItem.Label — @navItem.Description</option>
             }
-            </tbody>
-        </table>
-    </div>
-</section>
+        </select>
+        <noscript><button type="submit" class="btn btn-primary mt-2 w-100">切換資訊</button></noscript>
+    </form>
 
-<section class="mb-4">
-    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-2">
-        <div>
-            <h2 class="h4 mb-1">我的陀螺</h2>
-            <p class="text-muted mb-0">只計入已完成的小局；錦標賽取消前已完成的小局仍保留。</p>
-        </div>
-        <form method="get" class="row g-2">
-            <input type="hidden" name="personalSource" value="@Model.PersonalSource" />
-            <input type="hidden" name="personalSide" value="@Model.PersonalSide" />
-            <input type="hidden" name="personalSort" value="@Model.PersonalSort" />
-            <div class="col-sm-auto">
-                <label for="source" class="form-label small mb-1">資料來源</label>
-                <select id="source" name="source" class="form-select" onchange="this.form.submit()">
-                    <option value="all" selected="@(Model.Source == "all")">全部（@Model.Samples.All 局）</option>
-                    <option value="quick" selected="@(Model.Source == "quick")">快速對戰（@Model.Samples.Quick 局）</option>
-                    <option value="individual" selected="@(Model.Source == "individual")">個人賽（@Model.Samples.TournamentIndividual 局）</option>
-                    <option value="team" selected="@(Model.Source == "team")">團體賽（@Model.Samples.TournamentTeam 局）</option>
-                </select>
+    @if (Model.View == "overview")
+    {
+        <section class="statistics-panel" data-statistics-view="overview" aria-labelledby="statistics-overview-title">
+            <div class="statistics-panel-heading">
+                <div><p class="statistics-kicker">OVERVIEW</p><h2 id="statistics-overview-title">個人分項戰績</h2><p>團體賽的隊伍結果與實際上場小局分開呈現，避免混淆個人表現。</p></div>
+                <form method="get" class="statistics-filter-form">
+                    <input type="hidden" name="view" value="overview" />
+                    <input type="hidden" name="source" value="@Model.Source" />
+                    <input type="hidden" name="side" value="@Model.Side" />
+                    <input type="hidden" name="sort" value="@Model.Sort" />
+                    <input type="hidden" name="opponentSource" value="@Model.OpponentSource" />
+                    <div><label for="personalSource" class="form-label">資料來源</label><select id="personalSource" name="personalSource" class="form-select" onchange="this.form.submit()"><option value="all" selected="@(Model.PersonalSource == "all")">全部分項</option><option value="quick" selected="@(Model.PersonalSource == "quick")">快速對戰</option><option value="individual" selected="@(Model.PersonalSource == "individual")">個人賽</option><option value="team" selected="@(Model.PersonalSource == "team")">團體賽</option></select></div>
+                    <div><label for="personalSide" class="form-label">站位</label><select id="personalSide" name="personalSide" class="form-select" onchange="this.form.submit()"><option value="all" selected="@(Model.PersonalSide == "all")">B＋X Side</option><option value="b" selected="@(Model.PersonalSide == "b")">只看 B Side</option><option value="x" selected="@(Model.PersonalSide == "x")">只看 X Side</option></select></div>
+                    <div><label for="personalSort" class="form-label">排序</label><select id="personalSort" name="personalSort" class="form-select" onchange="this.form.submit()"><option value="winrate-desc" selected="@(Model.PersonalSort == "winrate-desc")">勝率：高到低</option><option value="winrate-asc" selected="@(Model.PersonalSort == "winrate-asc")">勝率：低到高</option><option value="score-desc" selected="@(Model.PersonalSort == "score-desc")">得分：高到低</option><option value="score-asc" selected="@(Model.PersonalSort == "score-asc")">得分：低到高</option><option value="against-desc" selected="@(Model.PersonalSort == "against-desc")">失分：高到低</option><option value="against-asc" selected="@(Model.PersonalSort == "against-asc")">失分：低到高</option><option value="difference-desc" selected="@(Model.PersonalSort == "difference-desc")">得失分差：高到低</option><option value="difference-asc" selected="@(Model.PersonalSort == "difference-asc")">得失分差：低到高</option><option value="b-winrate-desc" selected="@(Model.PersonalSort == "b-winrate-desc")">B Side 勝率：高到低</option><option value="b-winrate-asc" selected="@(Model.PersonalSort == "b-winrate-asc")">B Side 勝率：低到高</option><option value="x-winrate-desc" selected="@(Model.PersonalSort == "x-winrate-desc")">X Side 勝率：高到低</option><option value="x-winrate-asc" selected="@(Model.PersonalSort == "x-winrate-asc")">X Side 勝率：低到高</option></select></div>
+                    <noscript><button type="submit" class="btn btn-primary">套用</button></noscript>
+                </form>
             </div>
-            <div class="col-sm-auto">
-                <label for="side" class="form-label small mb-1">站位篩選</label>
-                <select id="side" name="side" class="form-select" onchange="this.form.submit()">
-                    <option value="all" selected="@(Model.Side == "all")">B＋X（@Model.SideSamples.All 局）</option>
-                    <option value="b" selected="@(Model.Side == "b")">B Side（@Model.SideSamples.B 局）</option>
-                    <option value="x" selected="@(Model.Side == "x")">X Side（@Model.SideSamples.X 局）</option>
-                </select>
-            </div>
-            <div class="col-sm-auto">
-                <label for="sort" class="form-label small mb-1">排序</label>
-                <select id="sort" name="sort" class="form-select" onchange="this.form.submit()">
-                    <option value="score-desc" selected="@(Model.Sort == "score-desc")">得分：高到低</option>
-                    <option value="score-asc" selected="@(Model.Sort == "score-asc")">得分：低到高</option>
-                    <option value="against-desc" selected="@(Model.Sort == "against-desc")">失分：高到低</option>
-                    <option value="against-asc" selected="@(Model.Sort == "against-asc")">失分：低到高</option>
-                    <option value="difference-desc" selected="@(Model.Sort == "difference-desc")">得失分差：高到低</option>
-                    <option value="difference-asc" selected="@(Model.Sort == "difference-asc")">得失分差：低到高</option>
-                    <option value="winrate-desc" selected="@(Model.Sort == "winrate-desc")">勝率：高到低</option>
-                    <option value="winrate-asc" selected="@(Model.Sort == "winrate-asc")">勝率：低到高</option>
-                    <option value="b-winrate-desc" selected="@(Model.Sort == "b-winrate-desc")">B Side 勝率：高到低</option>
-                    <option value="b-winrate-asc" selected="@(Model.Sort == "b-winrate-asc")">B Side 勝率：低到高</option>
-                    <option value="x-winrate-desc" selected="@(Model.Sort == "x-winrate-desc")">X Side 勝率：高到低</option>
-                    <option value="x-winrate-asc" selected="@(Model.Sort == "x-winrate-asc")">X Side 勝率：低到高</option>
-                </select>
-            </div>
-        </form>
-    </div>
-    <div class="table-responsive mt-3">
-        <table class="table align-middle">
-            <thead>
-                <tr><th>陀螺</th><th>勝／敗</th><th>勝率</th><th>得／失分</th><th>差</th><th>B Side</th><th>X Side</th><th>樣本</th><th>平均得／失分</th><th>發射失誤</th><th>結果類型（得／失）</th></tr>
-            </thead>
-            <tbody>
-            @foreach (var item in Model.Beyblades)
+            @if (Model.PersonalRows.Any())
             {
                 <tr>
                     <td class="fw-semibold"><a asp-page="Beyblade" asp-route-id="@item.BeybladeId">@item.Name</a></td>
@@ -161,59 +112,84 @@
                 <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>對手</th><th>勝／敗</th><th>得／失分</th></tr></thead><tbody>
                 @foreach (var item in Model.QuickOpponents)
                 {
-                    <tr><td><a asp-page="Opponent" asp-route-id="@item.OpponentId" asp-route-source="quick">@item.DisplayName</a></td><td>@item.Wins / @item.Losses<br><small>@item.WinRate.ToString("P0")</small></td><td>@item.Score / @item.AgainstScore</td></tr>
+                    <tr><td class="fw-semibold">@row.Label</td><td><strong>@row.Summary.WinRate.ToString("P0")</strong></td><td>@row.Summary.Wins / @row.Summary.Losses</td><td>@row.Summary.Score / @row.Summary.AgainstScore</td><td class="@(row.Summary.ScoreDifference >= 0 ? "text-success" : "text-danger")">@row.Summary.ScoreDifference</td><td>@row.Summary.BSide.Wins / @row.Summary.BSide.Losses（@row.Summary.BSide.WinRate.ToString("P0")）</td><td>@row.Summary.XSide.Wins / @row.Summary.XSide.Losses（@row.Summary.XSide.WinRate.ToString("P0")）</td><td>@row.Summary.LaunchFaultAgainstScore</td></tr>
                 }
-                @if (!Model.QuickOpponents.Any()) { <tr><td colspan="3" class="text-muted">尚無紀錄</td></tr> }
                 </tbody></table></div>
-            </div>
-        </div>
-        <div class="col-xl-4">
-            <div class="card h-100">
-                <div class="card-header fw-semibold">錦標賽個人賽</div>
-                <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>對手</th><th>勝／敗</th><th>得／失分</th></tr></thead><tbody>
-                @foreach (var item in Model.IndividualOpponents)
+                <div class="statistics-mobile-cards d-md-none">
+                @foreach (var row in Model.PersonalRows)
                 {
-                    <tr><td><a asp-page="Opponent" asp-route-id="@item.OpponentId" asp-route-source="individual">@item.DisplayName</a></td><td>@item.Wins / @item.Losses<br><small>@item.WinRate.ToString("P0")</small></td><td>@item.Score / @item.AgainstScore</td></tr>
+                    <article class="statistics-summary-card"><header><h3>@row.Label</h3><strong>@row.Summary.WinRate.ToString("P0")</strong></header><dl class="statistics-metrics"><div><dt>勝／敗</dt><dd>@row.Summary.Wins / @row.Summary.Losses</dd></div><div><dt>得／失分</dt><dd>@row.Summary.Score / @row.Summary.AgainstScore</dd></div><div><dt>得失分差</dt><dd class="@(row.Summary.ScoreDifference >= 0 ? "text-success" : "text-danger")">@row.Summary.ScoreDifference</dd></div><div><dt>失誤失分</dt><dd>@row.Summary.LaunchFaultAgainstScore</dd></div><div><dt>B Side</dt><dd>@row.Summary.BSide.Wins / @row.Summary.BSide.Losses · @row.Summary.BSide.WinRate.ToString("P0")</dd></div><div><dt>X Side</dt><dd>@row.Summary.XSide.Wins / @row.Summary.XSide.Losses · @row.Summary.XSide.WinRate.ToString("P0")</dd></div></dl></article>
                 }
-                @if (!Model.IndividualOpponents.Any()) { <tr><td colspan="3" class="text-muted">尚無紀錄</td></tr> }
-                </tbody></table></div>
+                </div>
+            }
+            else { <div class="empty-state"><h3>這個篩選目前沒有戰績</h3><p class="mb-0 text-muted">切換資料來源或站位，查看其他已完成對戰。</p></div> }
+        </section>
+    }
+    else if (Model.View == "blades")
+    {
+        <section class="statistics-panel" data-statistics-view="blades" aria-labelledby="statistics-blades-title">
+            <div class="statistics-panel-heading">
+                <div><p class="statistics-kicker">BEYBLADES</p><h2 id="statistics-blades-title">我的陀螺</h2><p>只計入已完成的小局；錦標賽取消前已完成的小局仍保留。</p></div>
+                <form method="get" class="statistics-filter-form">
+                    <input type="hidden" name="view" value="blades" /><input type="hidden" name="personalSource" value="@Model.PersonalSource" /><input type="hidden" name="personalSide" value="@Model.PersonalSide" /><input type="hidden" name="personalSort" value="@Model.PersonalSort" /><input type="hidden" name="opponentSource" value="@Model.OpponentSource" />
+                    <div><label for="source" class="form-label">資料來源</label><select id="source" name="source" class="form-select" onchange="this.form.submit()"><option value="all" selected="@(Model.Source == "all")">全部（@Model.Samples.All 局）</option><option value="quick" selected="@(Model.Source == "quick")">快速對戰（@Model.Samples.Quick 局）</option><option value="individual" selected="@(Model.Source == "individual")">個人賽（@Model.Samples.TournamentIndividual 局）</option><option value="team" selected="@(Model.Source == "team")">團體賽（@Model.Samples.TournamentTeam 局）</option></select></div>
+                    <div><label for="side" class="form-label">站位</label><select id="side" name="side" class="form-select" onchange="this.form.submit()"><option value="all" selected="@(Model.Side == "all")">B＋X（@Model.SideSamples.All 局）</option><option value="b" selected="@(Model.Side == "b")">B Side（@Model.SideSamples.B 局）</option><option value="x" selected="@(Model.Side == "x")">X Side（@Model.SideSamples.X 局）</option></select></div>
+                    <div><label for="sort" class="form-label">排序</label><select id="sort" name="sort" class="form-select" onchange="this.form.submit()"><option value="score-desc" selected="@(Model.Sort == "score-desc")">得分：高到低</option><option value="score-asc" selected="@(Model.Sort == "score-asc")">得分：低到高</option><option value="against-desc" selected="@(Model.Sort == "against-desc")">失分：高到低</option><option value="against-asc" selected="@(Model.Sort == "against-asc")">失分：低到高</option><option value="difference-desc" selected="@(Model.Sort == "difference-desc")">得失分差：高到低</option><option value="difference-asc" selected="@(Model.Sort == "difference-asc")">得失分差：低到高</option><option value="winrate-desc" selected="@(Model.Sort == "winrate-desc")">勝率：高到低</option><option value="winrate-asc" selected="@(Model.Sort == "winrate-asc")">勝率：低到高</option><option value="b-winrate-desc" selected="@(Model.Sort == "b-winrate-desc")">B Side 勝率：高到低</option><option value="b-winrate-asc" selected="@(Model.Sort == "b-winrate-asc")">B Side 勝率：低到高</option><option value="x-winrate-desc" selected="@(Model.Sort == "x-winrate-desc")">X Side 勝率：高到低</option><option value="x-winrate-asc" selected="@(Model.Sort == "x-winrate-asc")">X Side 勝率：低到高</option></select></div>
+                    <noscript><button type="submit" class="btn btn-primary">套用</button></noscript>
+                </form>
             </div>
-        </div>
-        <div class="col-xl-4">
-            <div class="card h-100">
-                <div class="card-header fw-semibold">團體賽實際小局</div>
-                <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>對手</th><th>勝／敗</th><th>得／失分</th></tr></thead><tbody>
-                @foreach (var item in Model.TeamOpponents)
+            @if (Model.Beyblades.Any())
+            {
+                <div class="table-responsive d-none d-lg-block"><table class="table statistics-table align-middle"><thead><tr><th>陀螺</th><th>勝率</th><th>勝／敗</th><th>得／失分（差）</th><th>B Side</th><th>X Side</th><th>樣本</th><th>詳細數據</th></tr></thead><tbody>
+                @foreach (var item in Model.Beyblades)
                 {
-                    <tr><td><a asp-page="Opponent" asp-route-id="@item.OpponentId" asp-route-source="team">@item.DisplayName</a></td><td>@item.Wins / @item.Losses<br><small>@item.WinRate.ToString("P0")</small></td><td>@item.Score / @item.AgainstScore</td></tr>
+                    <tr><td class="fw-semibold">@item.Name</td><td><strong>@item.WinRate.ToString("P0")</strong></td><td>@item.Wins / @item.Losses</td><td>@item.Score / @item.AgainstScore <span class="@(item.ScoreDifference >= 0 ? "text-success" : "text-danger")">（@item.ScoreDifference）</span></td><td>@item.BSide.Wins / @item.BSide.Losses（@item.BSide.WinRate.ToString("P0")）</td><td>@item.XSide.Wins / @item.XSide.Losses（@item.XSide.WinRate.ToString("P0")）</td><td>@item.RoundCount 局</td><td><details class="statistics-details"><summary>展開</summary><p>平均得／失分：@item.AverageScore.ToString("0.##") / @item.AverageAgainstScore.ToString("0.##")</p><p>發射失誤：@item.LaunchFaultCount 次／失 @item.LaunchFaultAgainstScore 分</p><p>轉停 @item.ResultTypes.SpinFinishFor/@item.ResultTypes.SpinFinishAgainst、擊飛 @item.ResultTypes.KnockOutFor/@item.ResultTypes.KnockOutAgainst、爆裂 @item.ResultTypes.BurstFor/@item.ResultTypes.BurstAgainst、極限 @item.ResultTypes.ExtremeFor/@item.ResultTypes.ExtremeAgainst</p></details></td></tr>
                 }
-                @if (!Model.TeamOpponents.Any()) { <tr><td colspan="3" class="text-muted">尚無紀錄</td></tr> }
                 </tbody></table></div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section>
-    <h2 class="h4">對戰歷史</h2>
-    <div class="list-group">
-    @foreach (var item in Model.History)
-    {
-        var sourceLabel = item.SourceType switch
-        {
-            BattleSourceType.Quick => "快速",
-            BattleSourceType.TournamentIndividual => "個人賽",
-            _ => "團體賽"
-        };
-        var sideLabel = item.Side is null ? "未記錄 Side" : $"{item.Side} Side";
-        <a asp-page="/Battles/Battle" asp-route-id="@item.BattleId" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-3">
-            <span><span class="badge text-bg-secondary me-2">@sourceLabel</span><span class="badge @(item.Side == BattleSide.B ? "text-bg-primary" : item.Side == BattleSide.X ? "text-bg-danger" : "text-bg-light") me-2">@sideLabel</span>vs @item.OpponentDisplayName — @(item.Won ? "勝" : "敗")@(item.IsTeamResult ? "（隊伍結果）" : string.Empty)</span>
-            <strong class="text-nowrap">@item.MyScore : @item.OpponentScore</strong>
-        </a>
+                <div class="statistics-mobile-cards d-lg-none">
+                @foreach (var item in Model.Beyblades)
+                {
+                    <article class="statistics-summary-card statistics-blade-card"><header><div><p>陀螺</p><h3>@item.Name</h3></div><strong>@item.WinRate.ToString("P0")</strong></header><dl class="statistics-metrics statistics-metrics-primary"><div><dt>勝／敗</dt><dd>@item.Wins / @item.Losses</dd></div><div><dt>得／失分</dt><dd>@item.Score / @item.AgainstScore</dd></div><div><dt>得失分差</dt><dd class="@(item.ScoreDifference >= 0 ? "text-success" : "text-danger")">@item.ScoreDifference</dd></div><div><dt>完成樣本</dt><dd>@item.RoundCount 局</dd></div></dl><details class="statistics-details"><summary>查看 Side 與得分類型</summary><dl class="statistics-metrics"><div><dt>B Side</dt><dd>@item.BSide.Wins / @item.BSide.Losses · @item.BSide.WinRate.ToString("P0")</dd></div><div><dt>X Side</dt><dd>@item.XSide.Wins / @item.XSide.Losses · @item.XSide.WinRate.ToString("P0")</dd></div><div><dt>平均得／失分</dt><dd>@item.AverageScore.ToString("0.##") / @item.AverageAgainstScore.ToString("0.##")</dd></div><div><dt>發射失誤</dt><dd>@item.LaunchFaultCount 次／失 @item.LaunchFaultAgainstScore 分</dd></div></dl><p class="statistics-result-types">轉停 @item.ResultTypes.SpinFinishFor/@item.ResultTypes.SpinFinishAgainst · 擊飛 @item.ResultTypes.KnockOutFor/@item.ResultTypes.KnockOutAgainst · 爆裂 @item.ResultTypes.BurstFor/@item.ResultTypes.BurstAgainst · 極限 @item.ResultTypes.ExtremeFor/@item.ResultTypes.ExtremeAgainst</p></details></article>
+                }
+                </div>
+            }
+            else { <div class="empty-state"><h3>這個篩選目前沒有陀螺戰績</h3><p class="mb-0 text-muted">切換資料來源或站位，查看其他完成小局。</p></div> }
+        </section>
     }
-    @if (!Model.History.Any())
+    else if (Model.View == "opponents")
     {
-        <div class="list-group-item text-muted">尚無已完成的對戰紀錄。</div>
+        <section class="statistics-panel" data-statistics-view="opponents" aria-labelledby="statistics-opponents-title">
+            <div class="statistics-panel-heading"><div><p class="statistics-kicker">MATCHUPS</p><h2 id="statistics-opponents-title">對手戰績</h2><p>團體賽只計算我實際上場的小局對手，不以隊伍勝負代替個人交手。</p></div></div>
+            <nav class="statistics-subtabs d-none d-md-flex" aria-label="對手戰績來源"><a asp-page="/Statistics/Index" asp-route-view="opponents" asp-route-opponentSource="quick" class="@(Model.OpponentSource == "quick" ? "is-active" : string.Empty)" aria-current="@(Model.OpponentSource == "quick" ? "page" : null)">快速對戰</a><a asp-page="/Statistics/Index" asp-route-view="opponents" asp-route-opponentSource="individual" class="@(Model.OpponentSource == "individual" ? "is-active" : string.Empty)" aria-current="@(Model.OpponentSource == "individual" ? "page" : null)">錦標賽個人賽</a><a asp-page="/Statistics/Index" asp-route-view="opponents" asp-route-opponentSource="team" class="@(Model.OpponentSource == "team" ? "is-active" : string.Empty)" aria-current="@(Model.OpponentSource == "team" ? "page" : null)">團體賽實際小局</a></nav>
+            <form method="get" class="d-md-none statistics-opponent-picker"><input type="hidden" name="view" value="opponents" /><label for="opponentSource" class="form-label">對戰來源</label><select id="opponentSource" name="opponentSource" class="form-select" onchange="this.form.submit()"><option value="quick" selected="@(Model.OpponentSource == "quick")">快速對戰</option><option value="individual" selected="@(Model.OpponentSource == "individual")">錦標賽個人賽</option><option value="team" selected="@(Model.OpponentSource == "team")">團體賽實際小局</option></select><noscript><button type="submit" class="btn btn-primary mt-2 w-100">切換來源</button></noscript></form>
+            @if (Model.Opponents.Any())
+            {
+                <div class="table-responsive d-none d-md-block mt-3"><table class="table statistics-table align-middle"><thead><tr><th>對手</th><th>勝率</th><th>勝／敗</th><th>得／失分</th><th>對位詳情</th></tr></thead><tbody>
+                @foreach (var item in Model.Opponents) { <tr><td class="fw-semibold">@item.DisplayName</td><td><strong>@item.WinRate.ToString("P0")</strong></td><td>@item.Wins / @item.Losses</td><td>@item.Score / @item.AgainstScore</td><td><a asp-page="Opponent" asp-route-id="@item.OpponentId" asp-route-source="@Model.OpponentSource">查看雙方陀螺</a></td></tr> }
+                </tbody></table></div>
+                <div class="statistics-mobile-cards d-md-none mt-3">
+                @foreach (var item in Model.Opponents) { <a asp-page="Opponent" asp-route-id="@item.OpponentId" asp-route-source="@Model.OpponentSource" class="statistics-opponent-card"><div><small>對手</small><strong>@item.DisplayName</strong><span>@item.Wins 勝 / @item.Losses 敗 · 得失分 @item.Score / @item.AgainstScore</span></div><span class="statistics-opponent-rate">@item.WinRate.ToString("P0")</span><span class="statistics-card-arrow" aria-hidden="true">→</span></a> }
+                </div>
+            }
+            else { <div class="empty-state mt-3"><h3>這個來源尚無對手紀錄</h3><p class="mb-0 text-muted">完成對戰後，交手資料會自動出現在這裡。</p></div> }
+        </section>
     }
-    </div>
-</section>
+    else
+    {
+        <section class="statistics-panel" data-statistics-view="history" aria-labelledby="statistics-history-title">
+            <div class="statistics-panel-heading"><div><p class="statistics-kicker">HISTORY</p><h2 id="statistics-history-title">對戰歷史</h2><p>依完成時間查看來源、站位、對手與最終比分。</p></div></div>
+            @if (Model.History.Any())
+            {
+                <div class="statistics-history-list">
+                @foreach (var item in Model.History)
+                {
+                    var sourceLabel = item.SourceType switch { BattleSourceType.Quick => "快速", BattleSourceType.TournamentIndividual => "個人賽", _ => "團體賽" };
+                    var sideLabel = item.Side is null ? "未記錄 Side" : $"{item.Side} Side";
+                    <a asp-page="/Battles/Battle" asp-route-id="@item.BattleId" class="statistics-history-item @(item.Won ? "is-win" : "is-loss")"><div class="statistics-history-main"><div class="statistics-history-badges"><span class="badge text-bg-secondary">@sourceLabel</span><span class="badge @(item.Side == BattleSide.B ? "text-bg-primary" : item.Side == BattleSide.X ? "text-bg-danger" : "text-bg-light")">@sideLabel</span>@if (item.IsTeamResult) { <span class="badge text-bg-dark">隊伍結果</span> }</div><strong>vs @item.OpponentDisplayName</strong>@if (item.CompletedAtUtc is not null) { <time datetime="@item.CompletedAtUtc.Value.ToString("O")">@item.CompletedAtUtc.Value.ToString("yyyy/MM/dd HH:mm") UTC</time> }</div><div class="statistics-history-result"><span>@(item.Won ? "勝" : "敗")</span><strong>@item.MyScore : @item.OpponentScore</strong></div></a>
+                }
+                </div>
+            }
+            else { <div class="empty-state"><h3>尚無已完成的對戰紀錄</h3><p class="mb-0 text-muted">完成第一場對戰後，即可從這裡回看詳情。</p></div> }
+        </section>
+    }
+</div>
