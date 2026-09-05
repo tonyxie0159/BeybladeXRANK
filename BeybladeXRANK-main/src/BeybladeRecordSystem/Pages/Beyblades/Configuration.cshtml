@@ -1,0 +1,28 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Beyblades.ConfigurationModel
+@using BeybladeRecordSystem.Domain.Enums
+@{ ViewData["Title"] = "陀螺零件配置"; }
+<h1>@Model.BeybladeName：零件配置</h1>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+<div asp-validation-summary="All" class="text-danger"></div>
+@if (Model.Configuration is { } configuration)
+{
+    <p>此為最新配置版本。原版本會保留，更換零件請前往編輯頁新增版本。</p>
+    <partial name="_ConfigurationDetails" model="configuration" />
+    <a asp-page="Edit" asp-route-id="@configuration.BeybladeId" class="btn btn-primary">編輯／新增版本</a>
+}
+else if (Model.AvailableParts.Count == 0)
+{
+    <p>零件目錄尚未開放，請稍後再試。</p>
+}
+else
+{
+    <p>請登錄第一個完整配置；過去未記錄零件的對戰會保留原狀。</p>
+    <p>一般上蓋選上蓋、固鎖、軸心。CX 選鎖定紋章、輔助戰刃，以及「主要戰刃」或「超越戰刃＋金屬戰刃」。使用固鎖一體式零件時，不另選固鎖。</p>
+    <form method="post" class="card card-body col-lg-8">
+        <partial name="_PartsEditor" model="new BeybladeRecordSystem.Pages.Beyblades.PartsEditorModel(Model.AvailableParts, Model.PartIds)" />
+        <button class="btn btn-primary">保存完整配置</button>
+    </form>
+}
+<a asp-page="Index" class="btn btn-link">返回我的陀螺</a>
+@section Scripts { <script src="~/js/parts-editor.js" asp-append-version="true"></script> }

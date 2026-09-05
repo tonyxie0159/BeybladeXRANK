@@ -31,8 +31,7 @@
             <p class="text-muted">順位會在雙方都提交後同時公開。你不能替對手選擇。</p>
             @for (var index = 0; index < 3; index++)
             {
-                <label class="form-label">@(index + 1) 號順位</label>
-                <select name="BladeIds" class="form-select mb-3"><option value="0">請選擇</option>@foreach (var blade in Model.Workspace.AvailableBeyblades) { <option value="@blade.Id">@blade.Name</option> }</select>
+                <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(index + 1, Model.Workspace.AvailableBeyblades)" />
             }
             <div><button class="btn btn-primary">密封提交</button> <a asp-page="/Beyblades/Create" asp-route-returnUrl="/Battles/Setup/@battle.Id" class="btn btn-outline-primary">先新增陀螺</a></div>
         </form>
@@ -88,5 +87,6 @@ else
 }
 
 @section Scripts {
+    <script src="~/js/lineup-versions.js" asp-append-version="true"></script>
     @if (shouldPoll) { <script>window.setTimeout(() => window.location.reload(), 60000);</script> }
 }

@@ -17,16 +17,17 @@ var dataDirectory = RuntimeStorage.ResolveDataDirectory(
     builder.Environment.ContentRootPath,
     builder.Configuration["RuntimeDataDirectory"]);
 Directory.CreateDirectory(dataDirectory);
-var databaseConnectionString = RuntimeStorage.ResolveSqliteConnectionString(
-    dataDirectory,
-    builder.Configuration.GetConnectionString("DefaultConnection"));
+var databaseConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(databaseConnectionString))
+    throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required.");
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")))
     .SetApplicationName("BeybladeRecordSystem");
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(databaseConnectionString));
+    options.UseNpgsql(databaseConnectionString));
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<BeybladeService>();
+builder.Services.AddScoped<BeybladeConfigurationService>();
 builder.Services.AddScoped<BattleService>();
 builder.Services.AddScoped<QuickBattleFlowService>();
 builder.Services.AddScoped<StatisticsService>();
@@ -69,12 +70,24 @@ app.MapRazorPages()
    .WithStaticAssets();
 app.MapHub<RealtimeHub>("/hubs/realtime");
 
-using (var scope = app.Services.CreateScope())
+if (args.Contains("--migrate", StringComparer.Ordinal))
 {
+    await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    await db.Database.MigrateAsync();
+    await PartCatalog.ImportAsync(db);
+    return;
 }
 
-app.Run();
+if (args.Contains("--import-parts", StringComparer.Ordinal))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var added = await PartCatalog.ImportAsync(db);
+    app.Logger.LogInformation("Parts catalog imported: {AddedCount} new parts.", added);
+    return;
+}
+
+await app.RunAsync();
 
 public partial class Program { }

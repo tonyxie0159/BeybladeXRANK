@@ -1,175 +1,111 @@
-# 現行開發計畫
+# 開發工作流程與待辦
 
-本文件只追蹤「有效規格與目前實作的差距」。不再使用已完成的兩天建置階段，也不保留舊版 Battle Setup 作為替代流程。
+本文件只定義現行開發方式與尚待補齊的驗收範圍。產品行為以 `Docs/README.md` 列出的規格文件為準；完成證據以 `acceptance-tests.md` 為準。
 
-第一次封測修正的需求、執行證據與實機清單記錄於 `first-closed-beta-experience-fixes.md`；若有產品規則差異，仍以本文件集及 `Docs/README.md` 的優先順序為準。
+零件目錄、完整組裝、通用名稱與搜尋選單的開發參考集中於 [parts-system.md](../03-Database/parts-system.md)。2026-09-05 已確認同上蓋多版本、CX 隱含組件的版本歸屬，以及先選陀螺再選版本流程；實作與驗收依該文件進行。
 
-## 已建立的基準
+專案不再使用封測批次、Phase 1–8 或固定 Step 0–8 作為開發順序。GitHub issue 與 Pull Request 是工作範圍及優先順序的唯一來源；沒有對應 issue 的歷史清單不得自動恢復成待辦。
 
-- .NET 10 Razor Pages、EF Core SQLite、Cookie Authentication。
-- User／Beyblade 與軟刪除。
-- QuickBattleInvitation、雙方私密 Lineup／Reorder、B／X Side 與完整快速計分。
-- Battle-specific ScoreToWin、實際 Player／Beyblade Round、Revision replay、棄權／取消。
-- Tournament／Entry／Member／Invitation／Match 資料與 migrations。
-- 單淘汰、雙敗、單循環、瑞士輪賽程及多種個人／團體 RuleSet。
-- Tournament 出賽、Lineup、推進、取消、Void／Reopen 與下游保護。
-- 來源分區、B／X Side、個人／陀螺／對手／歷史統計。
-- runtime data directory、Dockerfile、compose 與 Cloudflare 說明。
-- 155 項 Domain／Service／Persistence／HTTP／SignalR 整合測試通過。
+## 文件分工
 
-上述代表已有自動證據，不代表 UI、實機部署或下列差距已驗收。
+- `01-Product` 至 `07-Statistics` 與 `11-Tournament-Schedule`：產品、資料與介面規格。
+- `08-Development/acceptance-tests.md`：已驗證能力與尚缺證據。
+- `09-Deployment`：Docker、PostgreSQL、備份與對外連線。
+- `10-AI-Coding-Rules/agent-rules.md`：實作時不可突破的架構、安全與資料完整性規則。
+- 本文件：從 issue 到 draft PR 的共同工作流程，以及仍可建立 issue 的驗收缺口。
 
-## 開發前置 Gate：整理目前分支
+歷史封測修正計畫與已結案 QA 清單已從有效文件移除；其中仍成立的產品規則及驗收證據已併入上述文件。
 
-目前工作樹同時包含快速對戰、Tournament、統計、Migration、文件與部署調整。新增功能前必須：
+## 工作來源與範圍
 
-1. 依依賴關係整理現有變更，不遺失 migration 或測試。
-2. 將文件一致化獨立成可審查 commit。
-3. 將既有功能拆成聚焦 commit／stacked branches；每個 PR 只包含一個 coherent change。
-4. 每個分支重跑完整測試，先以 draft PR 送審。
+1. 從 GitHub issue 或使用者明確需求確認目標、非目標與驗收條件。
+2. 一個 branch／PR 只處理一個可獨立審查的主題。
+3. 若需求與有效規格衝突，先列出資料與相容性影響，取得確認後再修改規格及程式。
+4. 不以歷史程式碼、已刪除文件或暫時缺少測試為理由恢復舊流程。
 
-不得在未整理的大型 dirty worktree 上持續混入所有後續功能。
+## 標準開發流程
 
-## Phase 1：快速對戰唯一流程與返回入口（已完成）
+### 1. 準備
 
-完成證據：`GetActiveBattlesAsync`、Home／Invitations 狀態導向、Quick／Tournament／所有權／終止狀態回歸測試，以及舊 BattleService 契約移除均已完成。
+- 確認目前 branch、Git 狀態與未提交變更，不覆寫其他工作的內容。
+- 不在 `main` 開發；從正確基準建立 `codex/<short-description>`。
+- 閱讀受影響的產品規格、資料契約、驗收狀態及 GitHub issue。
+- 先界定需要新增或更新的 regression test；涉及資料時先確認備份與 migration 路徑。
 
-目標：
+### 2. 實作
 
-- Active battle query 包含準備、InProgress、ReorderSelection、VictoryPendingCompletion。
-- Home／Invitations 依狀態導向 Setup、Reorder 或 Battle。
-- 玩家刷新、登出、查看其他頁面後不需要記住 BattleId。
-- 將 BattleService 的 CreateDraft、雙邊 SetLineup／Reorder 舊方法移出有效 public contract，遷移舊測試到 QuickBattleFlowService。
+- 優先做最小且完整的垂直變更，不夾帶無關重構。
+- Domain、authentication、authorization、persistence 與 migration 變更必須有 focused regression test。
+- 保持 Account、Beyblade、Battle、Tournament 與 Statistics 的使用者所有權及私密資料邊界。
+- Battle 計分、Round revision history、Lineup ordering 與 Tournament progression 屬相容性敏感行為；任何語意改變都要有明確 migration 或測試。
+- UI 仍以 Server 驗證為準；Client 不得成為分數、狀態、晉級或所有權的權威來源。
 
-Regression tests：
+### 3. 資料庫變更
 
-- 每個 active 狀態都能被正確玩家查到並取得目的頁。
-- 其他使用者不可看到或開啟。
-- Completed／Forfeited／Voided／Cancelled 不出現在 active 清單。
-- 產品測試不再建立 Draft quick Battle。
+- 正式 provider 只有 PostgreSQL 18／Npgsql；SQLite 只可用於既有 cutover 工具或隔離測試。
+- 使用 EF Core migration 演進 schema，不以刪除 volume、清空資料庫或重建正式資料作為一般開發步驟。
+- 產生 migration 後檢查 SQL、model snapshot、upgrade path、constraint、index、foreign key 與資料 backfill。
+- 套用正式 migration 由一次性 Docker `migrate` service 負責，Web 一般啟動不得自行變更 schema。
+- 任何資料搬移或修復先備份、在拋棄式目標演練、核對內容，再操作正式環境。
 
-建議 PR：quick-battle-resume-and-contract-cleanup。
+### 4. 驗證
 
-## Phase 2：Tournament 報名生命週期
-
-### 2A 主辦方 Tournament invitation（已完成）
-
-完成證據：唯一 DisplayName 模糊搜尋、Tournament invitation 狀態歷史與結果通知、接受時建立或恢復唯一 Entry、容量失效、所有權與 invitation WaitingForMe 測試均已完成。
-
-- 依唯一 DisplayName 模糊搜尋，只傳 UserId 並不公開 Account。
-- 建立 Type = Tournament invitation，保留 Pending／Accepted／Declined／Invalidated。
-- 接受時才建立有效 Entry，並套用容量、唯一 Entry 與 concurrency 規則。
-- WaitingForMe 能看見並處理。
-
-建議 PR：tournament-participant-invitations。
-
-### 2B 通用重新開放報名（已完成）
-
-完成證據：個人、整隊、系統配隊、賽程草稿清理、重複操作、主辦方權限與正式開始後拒絕測試均已完成；舊 system-pairing 專用 reopen 契約已移除。
-
-- 個人、整隊及草稿失效後可由主辦方 ReopenRegistration。
-- 清理失效草稿／SchedulePosition，不變更已正式開始的 Tournament。
-- 系統配隊既有 reopen 行為整併到一致狀態轉移。
-
-建議 PR：tournament-registration-reopen。
-
-## Phase 3：出賽未到與操作佇列（已完成）
-
-完成證據：個人／團體 No-show、權限與狀態拒絕、單次 progression、零 Battle／零假戰績，以及邀請／組隊／Match／裁判 WaitingForMe 精確待辦、優先排序、完整摘要與身份操作測試均已完成。
-
-- 主辦方只可對 AwaitingParticipationConfirmation 的確定 Entry 操作。
-- 二次確認、原因選填；未回應不自動倒數。
-- 產生 Walkover、Winner／Loser 與 progression，不建立有比分 Battle。
-- Tournament List 新增 WaitingForMe filter 與待處理優先排序。
-- 摘要補齊 Mode、RegistrationMode、Format、Rule、Notes 與身份按鈕。
-
-Regression tests：
-
-- 參賽者未回覆前不自動判負。
-- 非主辦方、錯誤 Entry、錯誤狀態與重複操作被拒絕。
-- No-show 只推進一次且不產生個人／陀螺假戰績。
-
-建議 PR：tournament-no-show-and-action-queue。
-
-## Phase 4：公開 Tournament read model 與同步備援（已完成）
-
-完成證據：spectator 公開資料與 private workspace 邊界、私密 submission 公開時機、完成結果／Side／比分／實際 Lineup、Cancelled 保留資料，以及 List／Details／Match GET-only polling 不修改狀態測試均已完成。
-
-- 建立專用 public details ViewModel／query，不放寬 private Match workspace。
-- 顯示完整賽程、Entry、勝方、比分、目前 Match、實際玩家與已公開陀螺。
-- Cancelled Tournament 保留取消前合法完成資料。
-- Lineup 未全部提交前不外洩任何對手或觀眾不可見資料。
-- List／Details／current Match 使用低頻唯讀 polling 與手動刷新作為 SignalR 斷線備援。
-
-Regression tests：
-
-- spectator 可讀公開結果但不能取得 private selections。
-- participant／organizer 權限不回歸。
-- polling endpoint 只讀，不造成重複 POST。
-
-建議 PR：tournament-public-details。
-
-## Phase 5：正式排名與必要加賽
-
-### 5A 淘汰賽名次
-
-- [已完成] 單淘汰非決賽者依淘汰輪次並列。
-- [已完成] 雙敗依第二敗淘汰階段及決賽結果形成正式名次。
-- [已完成] Bye／Walkover 不虛構比分，且淘汰賽只在 Tournament Completed 後公布正式名次。
-
-### 5B 循環／瑞士必要加賽
-
-- [已完成] 保留既有 tie-break 順序，加賽結果不反向改寫例行排名統計。
-- [已完成] 完全同分時只對冠軍候選建立平衡單淘汰 Playoff bracket。
-- [已完成] 一般非冠軍同分維持並列，多名冠軍候選的非冠軍者在加賽後維持第二名並列。
-- [已完成] Tournament 在冠軍加賽完成前保持 InProgress，完成後才寫入 Completed。
-
-建議拆成兩個 PR：elimination-standings、tournament-required-playoffs。
-
-## Phase 6：UI／UX 與完整網站流程驗收（進行中）
-
-- 建立全站一致的深色視覺系統、導覽、表單、表格、狀態訊息、空狀態與觸控操作尺寸。
-- 優先改善首頁、Account、Beyblade、Quick Battle、Tournament 與 Statistics 的主要任務路徑。
-- 以瀏覽器驗收 Register、Login、Logout、Settings，以及所有登入後頁面的 GET、導覽與基本表單驗證。
-- 以桌面與手機尺寸驗收無水平溢出、導覽可操作、重要按鈕可見，狀態不只依賴顏色。
-- 再以多帳號人工驗收快速對戰及 Tournament 的私密 Lineup、Side、polling 與完成流程。
-- 補 WebApplicationFactory 或等效的 authentication、authorization、anti-forgery 與 private/public data integration tests。
-
-已完成的自動證據：登入／註冊錯誤後按鈕恢復、帳號與玩家名稱正規化唯一性、全站通知鈴鐺／六秒提示、SignalR Cookie 驗證即時事件、通知防重複、快速邀請與賽事邀請結果通知、手機版快速對戰計分板、中文賽制／狀態、交易式逐局完成、較早局修訂使後續局失效，以及重新排列預設順序。
-
-仍需兩個獨立實機登入工作階段驗收：背景／休眠後重連、即時導頁、觸控可讀性、完整快速與賽事多帳號流程。自動化瀏覽器只有單一 Cookie 工作階段，不能取代這項實機證據。
-
-建議 PR：responsive-ui-and-browser-acceptance。
-
-## Phase 7：併發與壓力回歸（依產品決策延後）
-
-- 使用兩個獨立 DbContext 驗證最後名額並行報名。
-- 補完成 Round／Battle／Match 重複 HTTP POST 的 integration test。
-- 規劃容量、長時間 SignalR／polling 與高頻寫入壓力測試；在 UI／UX 與單一使用者完整流程驗收前不阻擋目前階段。
-
-建議 PR：concurrency-and-load-regression-tests。
-
-## Phase 8：部署安全與實機驗收
-
-- 明確設定 ForwardedHeaders、可信 proxy／network 與外部 HTTPS scheme。
-- Authentication Cookie 使用 HttpOnly、適當 SameSite，外部 HTTPS 使用 Secure。
-- Docker build、migration、restart、SQLite／keys persistence、backup／restore。
-- LAN 與 Cloudflare Quick Tunnel 實測。
-- 有固定 Domain 時再建立 named tunnel；不宣稱 Quick Tunnel 為正式 SLA。
-
-建議 PR：cloudflare-forwarding-and-deployment-verification。
-
-## 每個 Phase 的完成條件
-
-1. 只修改該 coherent scope 的程式與文件。
-2. Domain／Service mutation 有 focused regression test。
-3. 涉及 Razor Pages 時補 HTTP 或明確人工驗收證據。
-4. migration 變更須驗證 upgrade path 與 CurrentModel_HasNoPendingMigrationChanges。
-5. 執行：
+至少執行：
 
 ```powershell
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
+git diff --check
 ```
 
-6. 更新 acceptance-tests.md 的證據狀態。
-7. 開啟 draft PR，檢查完成後才轉 ready。
+依變更範圍追加：
+
+- Razor Pages／authorization：HTTP integration test 與必要的瀏覽器操作。
+- 手機介面：桌面與手機 viewport、觸控、可讀性及水平溢出檢查。
+- migration／部署：PostgreSQL migration、Docker healthcheck、restart persistence 與 backup／restore 演練。
+- 即時流程：兩個獨立登入工作階段、重新連線及唯讀同步備援。
+- 併發敏感操作：獨立 DbContext、重複請求及 transaction 邊界測試。
+
+驗證完成後更新 `acceptance-tests.md`；沒有實際證據的項目保持未完成。
+
+### 5. 交付
+
+- 檢查 diff 只包含 issue 範圍，且沒有 secret、`.env`、資料庫、dump、Data Protection keys 或建置輸出。
+- 建立清楚的 commit，推送 `codex/*` branch 並開啟 draft PR。
+- PR 說明包含行為變更、資料影響、migration／rollback 注意事項及驗證結果。
+- CI 與人工驗收完成後才將 PR 轉為 ready；合併前不得宣稱其他環境已取得變更。
+
+## 尚待建立或完成的驗收工作
+
+以下是仍缺證據的範圍，不代表固定執行順序；是否開始與優先級由 GitHub issue 或使用者決定。
+
+### UI 與完整網站流程
+
+- Logout、Settings 與玩家名稱唯一性實機操作。
+- 所有登入後主要頁面的桌面／手機導覽、表單、觸控與水平溢出檢查。
+- 兩個獨立帳號完成快速對戰與主要 Tournament 流程。
+- 補齊私密 Lineup 不外洩與公開 Tournament read model 的 HTTP integration test。
+
+### 併發與可靠性
+
+- 兩個獨立 DbContext 競爭最後一個 Tournament 名額。
+- Round／Battle／Match 的重複 HTTP POST 不得重複計分、晉級或通知。
+- 容量、長時間 SignalR／polling 與高頻寫入壓力測試。
+
+### 部署與外部連線
+
+- Data Protection keys 的獨立還原演練。
+- 同網路其他裝置連線。
+- Cloudflare Tunnel HTTPS、forwarded headers、可信 proxy 與 Secure Cookie。
+- 正式 named tunnel 的 hostname、proxy allow-list 與操作文件。
+
+詳細狀態只在 `acceptance-tests.md` 維護，避免在多份文件重複建立待辦清單。
+
+## 完成定義
+
+一項工作只有在下列條件全部成立時才完成：
+
+1. GitHub issue 的驗收條件已滿足，且沒有擴張未核准範圍。
+2. focused tests 與完整 solution tests 通過。
+3. 資料、權限、隱私及相容性影響已有驗證。
+4. 相關規格與 `acceptance-tests.md` 已同步，且沒有舊流程或互斥說法。
+5. draft PR 內容可獨立審查，CI 與必要人工證據均可追溯。

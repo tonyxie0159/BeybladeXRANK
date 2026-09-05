@@ -5,7 +5,7 @@
 > 核准日期：2026-08-19<br>
 > 本文件是賽事房間、報名、賽程生成、單人賽與團體賽的實作及驗收依據。
 
-本文件是現行有效的目標規格，不以「目前畫面已存在」作為生效條件。尚未完成的有效需求統一列在 `08-Development/development-plan.md`；不得因程式暫缺就引用舊版 Battle、欄位或 API 取代。
+本文件是現行有效的目標規格，不以「目前畫面已存在」作為生效條件。開發方式與待補驗收入口統一記錄於 `08-Development/development-plan.md`；不得因程式暫缺就引用舊版 Battle、欄位或 API 取代。
 
 ## 1. 名詞與共通原則
 
@@ -403,7 +403,7 @@
 - 提供全部／B Side／X Side 篩選、各 Side 樣本數、B Side 勝率與 X Side 勝率排序。
 - 以 Round 為核心計算小局勝敗、得失分、平均每局得失分、ResultType、LaunchFault 與對手陀螺對位。
 - 不以不同勝利門檻的整場總分直接比較配置，不建立強弱排行榜。
-- 一個 BeybladeId 代表固定配置；實際配置改變應建立新 Beyblade，單純修正顯示名稱才使用 Rename。
+- 一個 BeybladeId 代表同一玩家的同上蓋母陀螺；實際零件不同且上蓋命名相同時保存另一個不可覆寫的配置版本，上蓋命名改變才建立新 Beyblade。出戰提交必須鎖定 ConfigurationId，Rename 只修正共用顯示名稱。
 - 戰績從 Battle、Round 與有效 Event 即時計算，不建立冗餘 Statistics Table。
 
 ## 19. 資料與交易要求
@@ -472,6 +472,6 @@ Client 不可提交任意分數、勝方、隊伍歸屬、ScoreToWin 或下一�
 ## 21. 實作與驗收追蹤
 
 - 已完成與自動測試覆蓋：以 `08-Development/acceptance-tests.md` 為準。
-- 尚未完成的功能、優先級及 PR 切分：以 `08-Development/development-plan.md` 為準。
+- 開發流程與待補驗收入口：以 `08-Development/development-plan.md` 為準；實際優先級及 PR 範圍以 GitHub issue 為準。
 - 本文件只定義規則，不以刪除需求、降低隱私或改回舊資料模型的方式配合暫時實作。
 - 每個功能 PR 都必須增加對應的 Domain／Service regression test；UI 流程另以 HTTP／瀏覽器或明確人工驗收補證據。

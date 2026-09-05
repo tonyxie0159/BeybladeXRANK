@@ -1044,6 +1044,13 @@ public class TournamentServiceTests
     {
         await using var fixture = await TestDatabase.CreateAsync();
         var (tournament, organizer, match) = await fixture.CreateStartedTeamMatchAsync(ruleSet);
+        await PartCatalog.ImportAsync(fixture.Db);
+        var configurationService = new BeybladeConfigurationService(fixture.Db);
+        var configurationPartIds = await fixture.Db.Parts.Where(x =>
+            (x.Category == PartCategory.Blade && x.Name == "時鐘幻象") ||
+            (x.Category == PartCategory.Ratchet && x.Name == "4-55") ||
+            (x.Category == PartCategory.Bit && x.Name == "S")).Select(x => x.Id).ToArrayAsync();
+        var configurationIds = new Dictionary<int, int>();
         var participants = match.Participants.OrderBy(x => x.TournamentEntryId).ThenBy(x => x.UserId).ToList();
         Assert.Equal(teamSize * 2, participants.Count);
         Assert.Equal(2, participants.Count(x => x.IsMatchRepresentative));
@@ -1066,10 +1073,22 @@ public class TournamentServiceTests
         {
             var blades = (await fixture.AddBladesAsync(participant.UserId, $"T{participant.UserId}")).Take(bladesPerPlayer).ToList();
             bladesByUser[participant.UserId] = blades;
+            Assert.True((await configurationService.RecordAsync(participant.UserId, blades[0], configurationPartIds)).Succeeded);
+            configurationIds[blades[0]] = await fixture.Db.BeybladeConfigurations.Where(x => x.BeybladeId == blades[0]).Select(x => x.Id).SingleAsync();
+            var variant = await fixture.Db.Parts.Where(x => configurationPartIds.Contains(x.Id) && x.Category != PartCategory.Bit).Select(x => x.Id).ToListAsync();
+            variant.Add(await fixture.Db.Parts.Where(x => x.Category == PartCategory.Bit && x.Name == "J").Select(x => x.Id).SingleAsync());
+            Assert.True((await configurationService.RecordAsync(participant.UserId, blades[0], variant)).Succeeded);
+            if (participant == participants[^1])
+                configurationIds[blades[0]] = (await configurationService.GetMineAsync(participant.UserId, blades[0]))!.Id;
         }
         foreach (var participant in participants)
         {
-            Assert.True((await fixture.MatchService.SubmitLineupAsync(match.Id, participant.UserId, bladesByUser[participant.UserId])).Succeeded);
+            var selectedBlades = bladesByUser[participant.UserId];
+            var selectedVersions = selectedBlades.Select(id => configurationIds.GetValueOrDefault(id)).ToArray();
+            var foreignVersions = selectedVersions.ToArray();
+            foreignVersions[0] = configurationIds[bladesByUser[participants.First(x => x.UserId != participant.UserId).UserId][0]];
+            Assert.False((await fixture.MatchService.SubmitLineupAsync(match.Id, participant.UserId, selectedBlades, foreignVersions)).Succeeded);
+            Assert.True((await fixture.MatchService.SubmitLineupAsync(match.Id, participant.UserId, selectedBlades, selectedVersions)).Succeeded);
             if (participant != participants[^1])
             {
                 fixture.Db.ChangeTracker.Clear();
@@ -1100,6 +1119,8 @@ public class TournamentServiceTests
         for (var memberIndex = 0; memberIndex < teamSize; memberIndex++)
         {
             var row = lineup[bladeIndex * teamSize + memberIndex];
+            Assert.Equal(configurationIds.TryGetValue(row.PlayerABeybladeId, out var aConfig) ? (int?)aConfig : null, row.PlayerAConfigurationId);
+            Assert.Equal(configurationIds.TryGetValue(row.PlayerBBeybladeId, out var bConfig) ? (int?)bConfig : null, row.PlayerBConfigurationId);
             Assert.Equal(sideA[memberIndex].UserId, row.PlayerAId);
             Assert.Equal(bladesByUser[sideA[memberIndex].UserId][bladeIndex], row.PlayerABeybladeId);
             Assert.Equal(sideB[memberIndex].UserId, row.PlayerBId);
@@ -1160,6 +1181,11 @@ public class TournamentServiceTests
         Assert.Equal(expectedRounds, sequenceTwo.Match.Battle!.Lineups.Count(x => x.SequenceNo == 2));
         Assert.All(sequenceTwo.Match.Battle.Lineups.Where(x => x.SequenceNo == 1), x => Assert.False(x.IsCurrent));
         Assert.All(sequenceTwo.Match.Battle.Lineups.Where(x => x.SequenceNo == 2), x => Assert.True(x.IsCurrent));
+        Assert.All(sequenceTwo.Match.Battle.Lineups, row =>
+        {
+            Assert.Equal(configurationIds.TryGetValue(row.PlayerABeybladeId, out var aConfig) ? (int?)aConfig : null, row.PlayerAConfigurationId);
+            Assert.Equal(configurationIds.TryGetValue(row.PlayerBBeybladeId, out var bConfig) ? (int?)bConfig : null, row.PlayerBConfigurationId);
+        });
         Assert.Equal(expectedRounds + 1, sequenceTwo.Match.Battle.Rounds.Single(x => x.Status == BattleRoundStatus.InProgress).RoundNo);
         Assert.Equal(expectedRounds, sequenceTwo.Match.Battle.SideAScore);
     }

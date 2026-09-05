@@ -1,6 +1,6 @@
 # 資料庫規格
 
-SQLite + EF Core migrations。以下是現行正式資料概念；省略 navigation property，但不省略會影響規則與歷史的欄位。
+PostgreSQL 18 + Npgsql EF Core migrations。以下是現行正式資料概念；省略 navigation property，但不省略會影響規則與歷史的欄位。正式 schema 由獨立 migration service 套用，Web Application 啟動時不直接修改 schema。
 
 ## User
 
@@ -33,6 +33,12 @@ Account 是不公開的登入識別；Account 與 DisplayName 都以 trim 後、
 - `CreatedAtUtc`、`UpdatedAtUtc`
 
 `(UserId, Name)` 唯一。Delete 採軟刪除；歷史 Lineup／Round 仍保留 Id 與名稱 Snapshot，新 Lineup 不得選擇已刪除項目。
+
+## 零件目錄與配置版本
+
+詳見 [零件系統](parts-system.md) 及 [279 個零件名稱](parts-catalog.md)。Part 保存分類與名稱，PartSeries 提供系列篩選，BeybladeConfiguration 與 BeybladeConfigurationPart 保存不可覆寫的完整配置版本。
+
+Beyblade 新增 nullable UpperName；有效陀螺以 UserId＋UpperName 唯一。BeybladeConfiguration 為一對多，新增 VersionNo 與 PartsKey，分別以 BeybladeId＋VersionNo、BeybladeId＋PartsKey 唯一。各版本不可覆寫；相同零件集合重用原版本。舊資料不自動補登。BattleLineupSelection.BeybladeConfigurationId、BattleLineup.PlayerAConfigurationId／PlayerBConfigurationId 是 nullable 配置快照關聯；舊對戰維持 null。Round 透過 LineupId 查詢當場配置。
 
 ## QuickBattleInvitation
 

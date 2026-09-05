@@ -99,44 +99,68 @@ public class StatisticsService(AppDbContext db)
         rounds = rounds.Where(x => MatchesSide(GetRoundSide(x, userId), side)).ToList();
         var blades = await db.Beyblades
             .Where(x => x.UserId == userId)
-            .ToDictionaryAsync(x => x.Id, x => x.Name);
+            .ToDictionaryAsync(x => x.Id, x => x.Name + (x.UpperName == null ? "" : " · " + x.UpperName));
 
-        var rows = blades.Select(pair =>
-        {
-            var myRounds = rounds
-                .Where(r => r.PlayerABeybladeId == pair.Key || r.PlayerBBeybladeId == pair.Key)
-                .ToList();
-            var effectiveEvents = myRounds.SelectMany(r => r.Events).Where(e => e.IsEffective).ToList();
-            var resultEvents = effectiveEvents
-                .Where(e => e.EventType == BattleRoundEventType.BattleResult && e.WinnerPlayerId.HasValue)
-                .ToList();
-            var wins = resultEvents.Count(e => e.WinnerPlayerId == userId);
-            var losses = resultEvents.Count(e => e.WinnerPlayerId != userId);
-            var score = effectiveEvents.Where(e => e.WinnerPlayerId == userId).Sum(e => e.ScoreAwarded);
-            var against = effectiveEvents.Where(e => e.WinnerPlayerId.HasValue && e.WinnerPlayerId != userId).Sum(e => e.ScoreAwarded);
-            var launchFaultEvents = effectiveEvents
-                .Where(e => e.EventType == BattleRoundEventType.LaunchFaultPenalty && e.ActorPlayerId == userId)
-                .ToList();
-
-            return new BeybladeStatisticsViewModel(
-                pair.Key,
-                pair.Value,
-                wins,
-                losses,
-                Rate(wins, losses),
-                score,
-                against,
-                launchFaultEvents.Sum(e => e.ScoreAwarded),
-                myRounds.Count,
-                Average(score, myRounds.Count),
-                Average(against, myRounds.Count),
-                launchFaultEvents.Count,
-                BuildResultTypeStatistics(resultEvents, userId),
-                BuildRoundSideStatistics(myRounds, userId, BattleSide.B),
-                BuildRoundSideStatistics(myRounds, userId, BattleSide.X));
-        });
+        var rows = blades.Select(pair => BuildBeybladeSummary(userId, pair.Key, pair.Value,
+            rounds.Where(r => r.PlayerABeybladeId == pair.Key || r.PlayerBBeybladeId == pair.Key).ToList()));
 
         return SortBeyblades(rows, sort).ToList();
+    }
+
+
+    public async Task<BeybladeVersionStatistics?> GetBeybladeVersionStatisticsAsync(
+        int userId, int beybladeId, StatisticsSourceFilter source = StatisticsSourceFilter.All, StatisticsSideFilter side = StatisticsSideFilter.All)
+    {
+        var blade = await db.Beyblades.AsNoTracking().WithConfiguration()
+            .SingleOrDefaultAsync(x => x.Id == beybladeId && x.UserId == userId);
+        if (blade is null) return null;
+        var rounds = await ApplyRoundSourceFilter(ValidCompletedRounds(userId), source)
+            .Where(x => (x.PlayerAId == userId && x.PlayerABeybladeId == beybladeId) ||
+                        (x.PlayerBId == userId && x.PlayerBBeybladeId == beybladeId))
+            .Include(x => x.Battle).Include(x => x.Lineup).Include(x => x.Events).ToListAsync();
+        rounds = rounds.Where(x => MatchesSide(GetRoundSide(x, userId), side)).ToList();
+        int? Version(BattleRound round) => round.PlayerAId == userId ? round.Lineup.PlayerAConfigurationId : round.Lineup.PlayerBConfigurationId;
+        var rows = blade.Configurations.OrderByDescending(x => x.VersionNo).Select(version =>
+            new BeybladeVersionStatisticsRow(version.Id, version.VersionLabel, version.PartsSummary,
+                BuildBeybladeSummary(userId, beybladeId, version.VersionLabel, rounds.Where(x => Version(x) == version.Id).ToList()))).ToList();
+        var unknown = rounds.Where(x => Version(x) is null).ToList();
+        if (unknown.Count > 0)
+            rows.Add(new(null, "未記錄版本", "當時未記錄零件，保留於總戰績。",
+                BuildBeybladeSummary(userId, beybladeId, "未記錄版本", unknown)));
+        return new(blade.Name, blade.UpperName,
+            BuildBeybladeSummary(userId, beybladeId, blade.Name, rounds), rows);
+    }
+
+    private static BeybladeStatisticsViewModel BuildBeybladeSummary(int userId, int beybladeId, string name, List<BattleRound> myRounds)
+    {
+        var effectiveEvents = myRounds.SelectMany(r => r.Events).Where(e => e.IsEffective).ToList();
+        var resultEvents = effectiveEvents
+            .Where(e => e.EventType == BattleRoundEventType.BattleResult && e.WinnerPlayerId.HasValue)
+            .ToList();
+        var wins = resultEvents.Count(e => e.WinnerPlayerId == userId);
+        var losses = resultEvents.Count(e => e.WinnerPlayerId != userId);
+        var score = effectiveEvents.Where(e => e.WinnerPlayerId == userId).Sum(e => e.ScoreAwarded);
+        var against = effectiveEvents.Where(e => e.WinnerPlayerId.HasValue && e.WinnerPlayerId != userId).Sum(e => e.ScoreAwarded);
+        var launchFaultEvents = effectiveEvents
+            .Where(e => e.EventType == BattleRoundEventType.LaunchFaultPenalty && e.ActorPlayerId == userId)
+            .ToList();
+
+        return new BeybladeStatisticsViewModel(
+            beybladeId,
+            name,
+            wins,
+            losses,
+            Rate(wins, losses),
+            score,
+            against,
+            launchFaultEvents.Sum(e => e.ScoreAwarded),
+            myRounds.Count,
+            Average(score, myRounds.Count),
+            Average(against, myRounds.Count),
+            launchFaultEvents.Count,
+            BuildResultTypeStatistics(resultEvents, userId),
+            BuildRoundSideStatistics(myRounds, userId, BattleSide.B),
+            BuildRoundSideStatistics(myRounds, userId, BattleSide.X));
     }
 
     public async Task<List<OpponentStatisticsViewModel>> GetOpponentStatisticsAsync(
@@ -168,6 +192,7 @@ public class StatisticsService(AppDbContext db)
         StatisticsSourceFilter source = StatisticsSourceFilter.All)
     {
         var rounds = await ApplyRoundSourceFilter(ValidCompletedRounds(userId), source)
+            .Include(x => x.Lineup)
             .Include(x => x.Events)
             .Where(x =>
                 (x.PlayerAId == userId && x.PlayerBId == opponentId) ||
@@ -176,8 +201,8 @@ public class StatisticsService(AppDbContext db)
 
         return rounds
             .GroupBy(round => round.PlayerAId == userId
-                ? (round.PlayerABeybladeNameSnapshot, round.PlayerBBeybladeNameSnapshot)
-                : (round.PlayerBBeybladeNameSnapshot, round.PlayerABeybladeNameSnapshot))
+                ? (round.PlayerABeybladeId, round.Lineup.PlayerAConfigurationId, round.PlayerBBeybladeId, round.Lineup.PlayerBConfigurationId)
+                : (round.PlayerBBeybladeId, round.Lineup.PlayerBConfigurationId, round.PlayerABeybladeId, round.Lineup.PlayerAConfigurationId))
             .Select(group =>
             {
                 var effectiveEvents = group.SelectMany(r => r.Events).Where(e => e.IsEffective).ToList();
@@ -189,8 +214,8 @@ public class StatisticsService(AppDbContext db)
                 var score = effectiveEvents.Where(e => e.WinnerPlayerId == userId).Sum(e => e.ScoreAwarded);
                 var against = effectiveEvents.Where(e => e.WinnerPlayerId == opponentId).Sum(e => e.ScoreAwarded);
                 return new OpponentBeybladeStatisticsViewModel(
-                    group.Key.Item1,
-                    group.Key.Item2,
+                    group.OrderByDescending(x => x.Id).Select(x => x.PlayerAId == userId ? x.PlayerABeybladeNameSnapshot : x.PlayerBBeybladeNameSnapshot).First(),
+                    group.OrderByDescending(x => x.Id).Select(x => x.PlayerAId == userId ? x.PlayerBBeybladeNameSnapshot : x.PlayerABeybladeNameSnapshot).First(),
                     wins,
                     losses,
                     Rate(wins, losses),

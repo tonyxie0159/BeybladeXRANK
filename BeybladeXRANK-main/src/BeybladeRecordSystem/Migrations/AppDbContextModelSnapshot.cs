@@ -4,6 +4,7 @@ using BeybladeRecordSystem.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -15,97 +16,103 @@ namespace BeybladeRecordSystem.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Battle", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("CreatedByUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("LineupSequenceNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("PendingLineupEditRequestedByUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("PlayerAEditRequestUsed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("PlayerAId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("PlayerALineupConfirmed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("PlayerBEditRequestUsed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("PlayerBId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("PlayerBLineupConfirmed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("ScoreToWin")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("SideADesignation")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SideAScore")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SideBScore")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SourceType")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("StartedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("TournamentMatchId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
-                        .HasColumnType("BLOB");
+                        .HasColumnType("bytea");
 
                     b.Property<string>("VoidReason")
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("VoidSnapshot")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("VoidedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("VoidedByUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("VoidedTournamentMatchId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("WinningPlayerId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("WinningSide")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -124,15 +131,15 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.ToTable("Battles", t =>
                         {
-                            t.HasCheckConstraint("CK_Battle_DifferentPlayers", "PlayerAId IS NULL OR PlayerBId IS NULL OR PlayerAId <> PlayerBId");
+                            t.HasCheckConstraint("CK_Battle_DifferentPlayers", "\"PlayerAId\" IS NULL OR \"PlayerBId\" IS NULL OR \"PlayerAId\" <> \"PlayerBId\"");
 
-                            t.HasCheckConstraint("CK_Battle_LineupSequenceNo", "LineupSequenceNo > 0");
+                            t.HasCheckConstraint("CK_Battle_LineupSequenceNo", "\"LineupSequenceNo\" > 0");
 
-                            t.HasCheckConstraint("CK_Battle_ScoreToWin", "ScoreToWin > 0");
+                            t.HasCheckConstraint("CK_Battle_ScoreToWin", "\"ScoreToWin\" > 0");
 
-                            t.HasCheckConstraint("CK_Battle_Scores", "SideAScore >= 0 AND SideBScore >= 0");
+                            t.HasCheckConstraint("CK_Battle_Scores", "\"SideAScore\" >= 0 AND \"SideBScore\" >= 0");
 
-                            t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND Status <> 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND ((Status <> 7 AND TournamentMatchId IS NOT NULL AND VoidedTournamentMatchId IS NULL) OR (Status = 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NOT NULL AND VoidedByUserId IS NOT NULL AND VoidedAtUtc IS NOT NULL AND LENGTH(TRIM(VoidReason)) > 0 AND VoidSnapshot IS NOT NULL)))");
+                            t.HasCheckConstraint("CK_Battle_SourceMatch", "(\"SourceType\" = 0 AND \"Status\" <> 7 AND \"TournamentMatchId\" IS NULL AND \"VoidedTournamentMatchId\" IS NULL) OR (\"SourceType\" IN (1, 2) AND ((\"Status\" <> 7 AND \"TournamentMatchId\" IS NOT NULL AND \"VoidedTournamentMatchId\" IS NULL) OR (\"Status\" = 7 AND \"TournamentMatchId\" IS NULL AND \"VoidedTournamentMatchId\" IS NOT NULL AND \"VoidedByUserId\" IS NOT NULL AND \"VoidedAtUtc\" IS NOT NULL AND LENGTH(TRIM(\"VoidReason\")) > 0 AND \"VoidSnapshot\" IS NOT NULL)))");
                         });
                 });
 
@@ -140,49 +147,57 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("BattleId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsCurrent")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("PlayerABeybladeId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PlayerABeybladeNameSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
+
+                    b.Property<int?>("PlayerAConfigurationId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("PlayerADisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int?>("PlayerAId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PlayerBBeybladeId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PlayerBBeybladeNameSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
+
+                    b.Property<int?>("PlayerBConfigurationId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("PlayerBDisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int?>("PlayerBId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PositionNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SequenceNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -194,6 +209,10 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.HasIndex("PlayerBId");
 
+                    b.HasIndex("PlayerAConfigurationId", "PlayerABeybladeId");
+
+                    b.HasIndex("PlayerBConfigurationId", "PlayerBBeybladeId");
+
                     b.HasIndex("BattleId", "SequenceNo", "PositionNo")
                         .IsUnique();
 
@@ -204,41 +223,48 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("BattleId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("BeybladeConfigurationId")
+                        .HasColumnType("integer");
 
                     b.Property<int>("BeybladeId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("BeybladeNameSnapshot")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasMaxLength(520)
+                        .HasColumnType("character varying(520)");
 
                     b.Property<string>("PlayerDisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("PositionNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SequenceNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("SubmittedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
                     b.HasIndex("BeybladeId");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("BeybladeConfigurationId", "BeybladeId");
 
                     b.HasIndex("BattleId", "SequenceNo", "BeybladeId")
                         .IsUnique();
@@ -248,9 +274,9 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.ToTable("BattleLineupSelections", t =>
                         {
-                            t.HasCheckConstraint("CK_BattleLineupSelection_PositionNo", "PositionNo > 0");
+                            t.HasCheckConstraint("CK_BattleLineupSelection_PositionNo", "\"PositionNo\" > 0");
 
-                            t.HasCheckConstraint("CK_BattleLineupSelection_SequenceNo", "SequenceNo > 0");
+                            t.HasCheckConstraint("CK_BattleLineupSelection_SequenceNo", "\"SequenceNo\" > 0");
                         });
                 });
 
@@ -258,58 +284,60 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("BattleId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("LineupId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PlayerABeybladeId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PlayerABeybladeNameSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("PlayerADisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int?>("PlayerAId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PlayerBBeybladeId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PlayerBBeybladeNameSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("PlayerBDisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int?>("PlayerBId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PositionNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RoundNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -329,37 +357,39 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int?>("ActorPlayerId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("BattleRoundId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("EventSequence")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("EventType")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("InvalidationReason")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsEffective")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("ResultType")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("ScoreAwarded")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("WinnerPlayerId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -373,36 +403,38 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("BattleRoundId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("ChangedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("ChangedByUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("NewBattleSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("NewEffectiveEventSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("PreviousBattleSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("PreviousEffectiveEventSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(500)");
 
                     b.HasKey("Id");
 
@@ -417,28 +449,30 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("BattleId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PositionNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SequenceNo")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("SubmittedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("SubmittedByUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -452,13 +486,14 @@ namespace BeybladeRecordSystem.Migrations
                         .IsUnique();
 
                     b.HasIndex("BattleId", "SequenceNo", "TournamentEntryId", "UserId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_BattleTeamOrderSelections_BattleId_SequenceNo_TournamentEn~1");
 
                     b.ToTable("BattleTeamOrderSelections", t =>
                         {
-                            t.HasCheckConstraint("CK_BattleTeamOrderSelection_PositionNo", "PositionNo > 0");
+                            t.HasCheckConstraint("CK_BattleTeamOrderSelection_PositionNo", "\"PositionNo\" > 0");
 
-                            t.HasCheckConstraint("CK_BattleTeamOrderSelection_SequenceNo", "SequenceNo > 0");
+                            t.HasCheckConstraint("CK_BattleTeamOrderSelection_SequenceNo", "\"SequenceNo\" > 0");
                         });
                 });
 
@@ -466,52 +501,179 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpperName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId", "Name")
                         .IsUnique();
 
+                    b.HasIndex("UserId", "UpperName")
+                        .IsUnique()
+                        .HasFilter("\"UpperName\" IS NOT NULL AND NOT \"IsDeleted\"");
+
                     b.ToTable("Beyblades");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BeybladeId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PartsKey")
+                        .IsRequired()
+                        .HasMaxLength(65)
+                        .HasColumnType("character varying(65)");
+
+                    b.Property<int>("VersionNo")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BeybladeId", "PartsKey")
+                        .IsUnique();
+
+                    b.HasIndex("BeybladeId", "VersionNo")
+                        .IsUnique();
+
+                    b.ToTable("BeybladeConfigurations", t =>
+                        {
+                            t.HasCheckConstraint("CK_Configuration_Version", "\"VersionNo\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BeybladeConfigurationPart", b =>
+                {
+                    b.Property<int>("ConfigurationId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PartNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("ConfigurationId", "PartId");
+
+                    b.HasIndex("PartId");
+
+                    b.ToTable("BeybladeConfigurationParts");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Part", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IntegratesRatchet")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category", "Name")
+                        .IsUnique();
+
+                    b.ToTable("Parts", t =>
+                        {
+                            t.HasCheckConstraint("CK_Part_Category", "\"Category\" BETWEEN 0 AND 7");
+
+                            t.HasCheckConstraint("CK_Part_IntegratesRatchet", "NOT \"IntegratesRatchet\" OR \"Category\" IN (0, 2)");
+
+                            t.HasCheckConstraint("CK_Part_Name", "LENGTH(TRIM(\"Name\")) > 0 AND \"Name\" = TRIM(\"Name\")");
+                        });
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.PartSeries", b =>
+                {
+                    b.Property<int>("PartId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Series")
+                        .HasColumnType("integer");
+
+                    b.HasKey("PartId", "Series");
+
+                    b.ToTable("PartSeries", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartSeries_Series", "\"Series\" BETWEEN 0 AND 2");
+                        });
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.QuickBattleInvitation", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("InviteeUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("InviterUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
-                        .HasColumnType("BLOB");
+                        .HasColumnType("bytea");
 
                     b.HasKey("Id");
 
@@ -527,80 +689,82 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("BeybladesPerPlayer")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("CancellationReason")
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTime?>("CancelledAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Format")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Mode")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(120)");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<int>("OrganizerUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("RegistrationClosedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("RegistrationMode")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RegistrationStage")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RuleSet")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("RulesSnapshot")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<int>("ScoreToWin")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("StartedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TargetEntryCount")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("TeamSize")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
-                        .HasColumnType("BLOB");
+                        .HasColumnType("bytea");
 
                     b.HasKey("Id");
 
@@ -610,13 +774,13 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.ToTable("Tournaments", t =>
                         {
-                            t.HasCheckConstraint("CK_Tournament_BeybladesPerPlayer", "BeybladesPerPlayer > 0");
+                            t.HasCheckConstraint("CK_Tournament_BeybladesPerPlayer", "\"BeybladesPerPlayer\" > 0");
 
-                            t.HasCheckConstraint("CK_Tournament_ScoreToWin", "ScoreToWin > 0");
+                            t.HasCheckConstraint("CK_Tournament_ScoreToWin", "\"ScoreToWin\" > 0");
 
-                            t.HasCheckConstraint("CK_Tournament_TargetEntryCount", "TargetEntryCount BETWEEN 2 AND 512");
+                            t.HasCheckConstraint("CK_Tournament_TargetEntryCount", "\"TargetEntryCount\" BETWEEN 2 AND 512");
 
-                            t.HasCheckConstraint("CK_Tournament_TeamSize", "(Mode = 0 AND TeamSize IS NULL) OR (Mode = 1 AND TeamSize IN (2, 3))");
+                            t.HasCheckConstraint("CK_Tournament_TeamSize", "(\"Mode\" = 0 AND \"TeamSize\" IS NULL) OR (\"Mode\" = 1 AND \"TeamSize\" IN (2, 3))");
                         });
                 });
 
@@ -624,44 +788,46 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(192)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(192)");
 
                     b.Property<int?>("IndividualUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("RegisteredAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("RegistrationNumber")
                         .HasMaxLength(32)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(32)");
 
                     b.Property<int?>("SchedulePosition")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("TeamName")
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<int>("TournamentId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("WithdrawnAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -683,30 +849,32 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("DisplayNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<bool>("IsRepresentative")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime>("JoinedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("MemberOrder")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -720,7 +888,7 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.ToTable("TournamentEntryMembers", t =>
                         {
-                            t.HasCheckConstraint("CK_TournamentEntryMember_MemberOrder", "MemberOrder > 0");
+                            t.HasCheckConstraint("CK_TournamentEntryMember_MemberOrder", "\"MemberOrder\" > 0");
                         });
                 });
 
@@ -728,34 +896,36 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("InvalidatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("InvitedByUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("InvitedUserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("RespondedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("TournamentEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -774,82 +944,84 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("Bracket")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsBye")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsResetFinal")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsSeedQualifier")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("LoserEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("LoserToMatchId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("MatchNumber")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("ResolutionReason")
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<int>("RoundNumber")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SequenceNumber")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("SideAEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SideASourceKind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SideASourceReferenceId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("SideBEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("SideBSourceKind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("SideBSourceReferenceId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
-                        .HasColumnType("BLOB");
+                        .HasColumnType("bytea");
 
                     b.Property<int?>("WinnerEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("WinnerToMatchId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -875,15 +1047,15 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.ToTable("TournamentMatches", t =>
                         {
-                            t.HasCheckConstraint("CK_TournamentMatch_ByeSide", "IsBye = 0 OR SideBSourceReferenceId IS NULL");
+                            t.HasCheckConstraint("CK_TournamentMatch_ByeSide", "NOT \"IsBye\" OR \"SideBSourceReferenceId\" IS NULL");
 
-                            t.HasCheckConstraint("CK_TournamentMatch_MatchNumber", "MatchNumber > 0");
+                            t.HasCheckConstraint("CK_TournamentMatch_MatchNumber", "\"MatchNumber\" > 0");
 
-                            t.HasCheckConstraint("CK_TournamentMatch_RoundNumber", "RoundNumber > 0");
+                            t.HasCheckConstraint("CK_TournamentMatch_RoundNumber", "\"RoundNumber\" > 0");
 
-                            t.HasCheckConstraint("CK_TournamentMatch_SequenceNumber", "SequenceNumber > 0");
+                            t.HasCheckConstraint("CK_TournamentMatch_SequenceNumber", "\"SequenceNumber\" > 0");
 
-                            t.HasCheckConstraint("CK_TournamentMatch_SideAReference", "SideASourceReferenceId > 0");
+                            t.HasCheckConstraint("CK_TournamentMatch_SideAReference", "\"SideASourceReferenceId\" > 0");
                         });
                 });
 
@@ -891,39 +1063,41 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<bool>("IsMatchRepresentative")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("LineupConfirmed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LineupConfirmedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("NotifiedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("RespondedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentEntryId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TournamentMatchId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
-                        .HasColumnType("BLOB");
+                        .HasColumnType("bytea");
 
                     b.HasKey("Id");
 
@@ -944,37 +1118,39 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Account")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("NormalizedAccount")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("NormalizedDisplayName")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -991,54 +1167,56 @@ namespace BeybladeRecordSystem.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int?>("ActionEntityId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<int>("ActionType")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DedupeKey")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(200)");
 
                     b.Property<int?>("EntityId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("EntityType")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Message")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTime?>("ReadAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ResolvedAtUtc")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("TargetUrl")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(120)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(120)");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -1046,7 +1224,7 @@ namespace BeybladeRecordSystem.Migrations
 
                     b.HasIndex("UserId", "DedupeKey")
                         .IsUnique()
-                        .HasFilter("ResolvedAtUtc IS NULL AND DedupeKey IS NOT NULL");
+                        .HasFilter("\"ResolvedAtUtc\" IS NULL AND \"DedupeKey\" IS NOT NULL");
 
                     b.ToTable("UserNotifications");
                 });
@@ -1127,15 +1305,31 @@ namespace BeybladeRecordSystem.Migrations
                         .HasForeignKey("PlayerBId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", "PlayerAConfiguration")
+                        .WithMany()
+                        .HasForeignKey("PlayerAConfigurationId", "PlayerABeybladeId")
+                        .HasPrincipalKey("Id", "BeybladeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", "PlayerBConfiguration")
+                        .WithMany()
+                        .HasForeignKey("PlayerBConfigurationId", "PlayerBBeybladeId")
+                        .HasPrincipalKey("Id", "BeybladeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Battle");
 
                     b.Navigation("PlayerA");
 
                     b.Navigation("PlayerABeyblade");
 
+                    b.Navigation("PlayerAConfiguration");
+
                     b.Navigation("PlayerB");
 
                     b.Navigation("PlayerBBeyblade");
+
+                    b.Navigation("PlayerBConfiguration");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BattleLineupSelection", b =>
@@ -1158,9 +1352,17 @@ namespace BeybladeRecordSystem.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", "BeybladeConfiguration")
+                        .WithMany()
+                        .HasForeignKey("BeybladeConfigurationId", "BeybladeId")
+                        .HasPrincipalKey("Id", "BeybladeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Battle");
 
                     b.Navigation("Beyblade");
+
+                    b.Navigation("BeybladeConfiguration");
 
                     b.Navigation("User");
                 });
@@ -1272,6 +1474,47 @@ namespace BeybladeRecordSystem.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", b =>
+                {
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.Beyblade", "Beyblade")
+                        .WithMany("Configurations")
+                        .HasForeignKey("BeybladeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Beyblade");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BeybladeConfigurationPart", b =>
+                {
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", "Configuration")
+                        .WithMany("Parts")
+                        .HasForeignKey("ConfigurationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Configuration");
+
+                    b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.PartSeries", b =>
+                {
+                    b.HasOne("BeybladeRecordSystem.Domain.Entities.Part", "Part")
+                        .WithMany("Series")
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Part");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.QuickBattleInvitation", b =>
@@ -1490,6 +1733,21 @@ namespace BeybladeRecordSystem.Migrations
                     b.Navigation("Events");
 
                     b.Navigation("Revisions");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Beyblade", b =>
+                {
+                    b.Navigation("Configurations");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration", b =>
+                {
+                    b.Navigation("Parts");
+                });
+
+            modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Part", b =>
+                {
+                    b.Navigation("Series");
                 });
 
             modelBuilder.Entity("BeybladeRecordSystem.Domain.Entities.Tournament", b =>

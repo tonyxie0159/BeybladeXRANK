@@ -1,0 +1,54 @@
+@model BeybladeRecordSystem.Pages.Beyblades.PartsEditorModel
+@using BeybladeRecordSystem.Domain.Enums
+@using BeybladeRecordSystem.Pages.Beyblades
+@{
+    var selected = Model.AvailableParts.Where(x => Model.PartIds.Contains(x.Id)).ToList();
+    var structure = selected.Any(x => x.Category == PartCategory.MetalBlade || x.Category == PartCategory.OverBlade)
+        ? "cx-metal" : selected.Any(x => x.Category == PartCategory.LockChip || x.Category == PartCategory.MainBlade) ? "cx-main" : "blade";
+}
+<link rel="stylesheet" href="~/css/parts-editor.css" asp-append-version="true" />
+<fieldset class="parts-editor" data-parts-editor>
+    <legend class="h5">零件組成</legend>
+    <p class="text-muted">先選上蓋結構，再搜尋各零件。使用固鎖一體式零件時，不需另選固鎖。</p>
+    @if (Model.AvailableParts.Count == 0)
+    {
+        <div class="alert alert-warning">零件目錄尚未開放，暫時無法儲存陀螺。</div>
+    }
+    <div class="mb-3 parts-structure" hidden>
+        <label for="part-structure" class="form-label">上蓋結構</label>
+        <select id="part-structure" class="form-select" data-structure>
+            <option value="blade" selected="@(structure == "blade")">一般／一體式上蓋（BX、UX）</option>
+            <option value="cx-main" selected="@(structure == "cx-main")">CX 三件式：紋章＋主要戰刃＋輔助戰刃</option>
+            <option value="cx-metal" selected="@(structure == "cx-metal")">CX 四件式：紋章＋超越戰刃＋金屬戰刃＋輔助戰刃</option>
+        </select>
+    </div>
+    <noscript><p>CX 三件式須選紋章、主要戰刃、輔助戰刃；四件式須選紋章、超越戰刃、金屬戰刃、輔助戰刃。其餘上蓋類別請選「不使用」。儲存後由系統產生通用名稱。</p></noscript>
+    <div class="parts-grid">
+    @foreach (var category in new[] { PartCategory.Blade, PartCategory.LockChip, PartCategory.MainBlade, PartCategory.OverBlade, PartCategory.MetalBlade, PartCategory.AssistBlade, PartCategory.Ratchet, PartCategory.Bit })
+    {
+        var label = ConfigurationModel.CategoryLabel(category);
+        <div class="part-field" data-category="@category">
+            <label class="form-label fw-semibold" for="part-@category">@label</label>
+            <div class="part-search" hidden>
+                <label class="visually-hidden" for="search-@category">搜尋@(label)</label>
+                <input type="search" id="search-@category" class="form-control mb-2" placeholder="輸入名稱或部分字詞搜尋" autocomplete="off" aria-controls="part-@category" />
+                <small class="text-muted" data-search-status aria-live="polite"></small>
+            </div>
+            <select name="PartIds" id="part-@category" class="form-select" data-part-select>
+                <option value="0">請選擇／不使用</option>
+                @foreach (var part in Model.AvailableParts.Where(x => x.Category == category))
+                {
+                    <option value="@part.Id" data-name="@part.Name" data-integrated="@(part.IntegratesRatchet ? "true" : "false")" selected="@(Model.PartIds.Contains(part.Id))">@part.Name@(part.IntegratesRatchet ? "（固鎖一體式）" : "")</option>
+                }
+            </select>
+        </div>
+    }
+    </div>
+    <p class="text-muted mt-3" data-ratchet-note hidden>已使用固鎖一體式零件，不另選固鎖。</p>
+    <div class="parts-preview mt-4" aria-live="polite" aria-atomic="true">
+        <span class="text-muted">通用名稱（系統產生）</span>
+        <output class="d-block fs-5 fw-semibold" data-common-name>選齊零件後顯示</output>
+        <p class="mb-0 mt-2" data-assembly-status>請完成零件選擇。</p>
+    </div>
+    <p class="small text-muted mt-2">CX 通用名稱使用紋章＋主要戰刃或金屬戰刃；超越戰刃與輔助戰刃仍須完整選用。</p>
+</fieldset>

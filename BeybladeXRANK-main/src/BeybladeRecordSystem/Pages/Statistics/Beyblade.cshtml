@@ -1,0 +1,42 @@
+@page "{id:int}"
+@model BeybladeRecordSystem.Pages.Statistics.BeybladeModel
+@using BeybladeRecordSystem.Domain.Enums
+@{ ViewData["Title"] = "陀螺版本戰績"; var total = Model.Details.Total; }
+<header class="page-header"><div><p class="eyebrow">BEYBLADE PERFORMANCE</p><h1>@Model.Details.Name</h1><p>@Model.Details.UpperName · 總戰績與配置版本</p></div></header>
+<form method="get" class="row g-3 mb-4">
+    <div class="col-sm-5"><label asp-for="Source" class="form-label">對戰來源</label><select asp-for="Source" class="form-select">
+        <option value="All">全部</option><option value="Quick">快速對戰</option>
+        <option value="TournamentIndividual">錦標賽個人賽</option><option value="TournamentTeam">錦標賽團體賽</option>
+    </select></div>
+    <div class="col-sm-5"><label asp-for="Side" class="form-label">站位</label><select asp-for="Side" class="form-select">
+        <option value="All">全部</option><option value="B">B Side</option><option value="X">X Side</option>
+    </select></div>
+    <div class="col-sm-2 align-self-end"><button class="btn btn-outline-primary">套用</button></div>
+</form>
+<section class="card card-body mb-4">
+    <h2 class="h5">全部版本合計</h2>
+    <p class="fs-5 mb-0">@total.Wins 勝 / @total.Losses 敗 · 勝率 @total.WinRate.ToString("P0")</p>
+    <p class="text-muted mb-0">得分 @total.Score · 失分 @total.AgainstScore · @total.RoundCount 個小局</p>
+</section>
+<h2 class="h4">版本明細</h2>
+@if (Model.Details.Versions.Count == 0) { <p class="text-muted">尚無配置版本或對戰紀錄。</p> }
+@foreach (var row in Model.Details.Versions)
+{
+    var stats = row.Summary;
+    <section class="card card-body mb-3">
+        <h3 class="h5">@row.Label</h3><p class="small text-muted">@row.Parts</p>
+        <div class="row g-3">
+            <div class="col-sm-6">@stats.Wins 勝 / @stats.Losses 敗 · 勝率 @stats.WinRate.ToString("P0")<br />得分 @stats.Score · 失分 @stats.AgainstScore · 差分 @stats.ScoreDifference</div>
+            <div class="col-sm-6">@stats.RoundCount 個小局 · 每局得分 @stats.AverageScore / 失分 @stats.AverageAgainstScore<br />發射失誤 @stats.LaunchFaultCount 次 · 失誤失分 @stats.LaunchFaultAgainstScore</div>
+        </div>
+        <details class="mt-3"><summary>站位與勝利方式</summary>
+            <p>B Side：@stats.BSide.Wins 勝 / @stats.BSide.Losses 敗 · X Side：@stats.XSide.Wins 勝 / @stats.XSide.Losses 敗</p>
+            <p class="mb-0">勝／敗次數：轉停 @stats.ResultTypes.SpinFinishFor / @stats.ResultTypes.SpinFinishAgainst；
+                擊飛 @stats.ResultTypes.KnockOutFor / @stats.ResultTypes.KnockOutAgainst；
+                爆裂 @stats.ResultTypes.BurstFor / @stats.ResultTypes.BurstAgainst；
+                極限 @stats.ResultTypes.ExtremeFor / @stats.ResultTypes.ExtremeAgainst</p>
+        </details>
+    </section>
+}
+<p class="text-muted">只計入有效事件，沿用既有戰績計算規則。過去未記錄配置的戰績保留於「未記錄版本」。</p>
+<a asp-page="Index" class="btn btn-link">返回我的戰績</a>

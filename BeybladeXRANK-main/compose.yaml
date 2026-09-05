@@ -1,8 +1,51 @@
 services:
+  db:
+    image: postgres:18-bookworm
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-beyblade}
+      POSTGRES_USER: ${POSTGRES_USER:-beyblade}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    command: ["dotnet", "BeybladeRecordSystem.dll", "--migrate"]
+    environment:
+      RuntimeDataDirectory: /app/data
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-beyblade};Username=${POSTGRES_USER:-beyblade};Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data/keys:/app/data/keys
+    restart: "no"
+
   app:
     build: .
     ports:
-      - "8080:8080"
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8080}:8080"
+    environment:
+      RuntimeDataDirectory: /app/data
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-beyblade};Username=${POSTGRES_USER:-beyblade};Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
-      - ./data:/app/data
+      - ./data/keys:/app/data/keys
     restart: unless-stopped
+
+volumes:
+  postgres-data:
+    name: ${POSTGRES_VOLUME_NAME:-beybladexrank-postgres-data}

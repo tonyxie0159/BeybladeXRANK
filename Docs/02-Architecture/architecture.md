@@ -4,12 +4,12 @@
 
 - .NET 10 ASP.NET Core Razor Pages
 - Bootstrap、Vanilla JavaScript 與 ASP.NET Core SignalR client
-- EF Core + SQLite
+- EF Core + PostgreSQL 18（Npgsql）
 - xUnit
-- Docker 單一 Web container
+- Docker Web、一次性 migration 與 PostgreSQL containers
 - 主機側 Cloudflare Tunnel
 
-不建立 SPA、獨立 REST API 專案、獨立 DB container、Redis 或微服務。使用 ASP.NET Core SignalR 作為站內即時狀態提示，並保留低頻唯讀同步備援。
+不建立 SPA、獨立 REST API 專案、Redis 或微服務。PostgreSQL 是唯一的獨立資料服務；使用 ASP.NET Core SignalR 作為站內即時狀態提示，並保留低頻唯讀同步備援。
 
 ## 單體分層
 
@@ -33,7 +33,7 @@ Domain rules / schedule generators
   |
 AppDbContext / EF Core migrations
   |
-SQLite + persisted Data Protection keys
+PostgreSQL named volume + persisted Data Protection keys
 ```
 
 ### Web
@@ -71,7 +71,7 @@ Razor PageModel 只負責：
 ### Infrastructure
 
 - `AppDbContext`、Entity configuration、migration。
-- `RuntimeStorage` 將 SQLite 與 Data Protection keys 統一放在 runtime data directory。
+- `RuntimeStorage` 只解析 Data Protection keys 的 runtime data directory；PostgreSQL 由 connection string 與 Docker named volume 管理。
 - Server-side PasswordHasher、Cookie Authentication。
 
 ## 所有權與隱私邊界

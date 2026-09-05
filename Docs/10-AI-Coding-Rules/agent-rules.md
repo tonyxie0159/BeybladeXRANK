@@ -4,15 +4,15 @@
 
 ## Scope Lock
 
-只實作有效文件與目前明確開發 Phase 內的功能。除非使用者另行核准，不加入：
+只實作有效文件與 GitHub issue／使用者明確核准範圍內的功能。除非使用者另行核准，不加入：
 
 - 好友、聊天、社群、公開玩家目錄或永久社群 Team。
 - 排行榜、賽季、配對分、Elo 或其他未規範的強弱評分。
 - OAuth、Google Login、Email、手機推播。
 - QR Code、PWA 離線、手機作業系統推播或自訂原生 WebSocket protocol。
 - React、Vue、Blazor 或其他 SPA。
-- Microservices、Redis、獨立 REST API、獨立 DB container。
-- PostgreSQL、SQL Server、Admin Portal 或完整角色權限系統。
+- Microservices、Redis 或獨立 REST API。
+- 第二套正式資料庫、SQL Server、Admin Portal 或完整角色權限系統。
 - 陀螺圖片／零件資料庫、第三方分析、自動雲端部署。
 
 Tournament-scoped 雙人／三人臨時隊伍是已核准功能，不受「永久社群 Team」禁令限制；不得把它擴張成跨 Tournament 保存的 Team。
@@ -23,8 +23,8 @@ Tournament-scoped 雙人／三人臨時隊伍是已核准功能，不受「永�
 
 - ASP.NET Core Razor Pages
 - Bootstrap、Vanilla JavaScript、ASP.NET Core SignalR client
-- EF Core + SQLite
-- Docker 單一 Web container
+- EF Core + PostgreSQL 18（Npgsql）
+- Docker Web、一次性 migration 與 PostgreSQL containers
 - 主機側 Cloudflare Tunnel
 
 不得為了「未來可能擴充」增加未需求的抽象或基礎設施。
@@ -126,7 +126,7 @@ Revision 必須：
 4. 先寫或更新 focused regression test，再完成 Service／UI。
 5. 有 migration 時驗證 upgrade 與 model snapshot。
 6. 執行完整 dotnet test。
-7. 更新 acceptance-tests.md 與 development-plan.md。
+7. 更新 acceptance-tests.md 與所有受影響的規格；待補驗收範圍改變時才更新 development-plan.md。
 8. 檢查文件沒有重新引入 Docs/README.md 列出的淘汰規格。
 
 測試失敗不得先忽略並繼續堆功能。
@@ -147,7 +147,7 @@ Revision 必須：
 docker compose up -d --build
 ```
 
-並在 localhost:8080 使用。SQLite 與 Data Protection keys 必須在 data/ 持久化。Cloudflare Tunnel 由主機側提供；外部 HTTPS 上線前驗證 forwarded headers、可信 proxy 與 Secure Cookie。
+並在 localhost:8080 使用。PostgreSQL 必須使用具名 volume，Data Protection keys 必須在 `data/keys/` 持久化。Cloudflare Tunnel 由主機側提供；外部 HTTPS 上線前驗證 forwarded headers、可信 proxy 與 Secure Cookie。
 
 ## 完成定義
 
@@ -158,5 +158,5 @@ MVP 完成必須同時具備：
 - Tournament 建立、邀請、報名／重開、整隊／配隊、四種賽制、多種 RuleSet、No-show、取消／Void、完整公開賽程及 polling。
 - 單淘汰／雙敗名次與規範要求的循環／瑞士加賽。
 - 來源與 B／X Side 玩家／陀螺／對手／歷史統計。
-- concurrency、HTTP／authorization、手機 UI、Docker／SQLite／Cloudflare 驗收證據。
+- concurrency、HTTP／authorization、手機 UI、Docker／PostgreSQL／Cloudflare 驗收證據。
 - 所有有效文件與程式一致，完整測試通過。

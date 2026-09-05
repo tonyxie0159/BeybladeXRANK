@@ -8,6 +8,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Beyblade> Beyblades => Set<Beyblade>();
+    public DbSet<Part> Parts => Set<Part>();
+    public DbSet<PartSeries> PartSeries => Set<PartSeries>();
+    public DbSet<BeybladeConfiguration> BeybladeConfigurations => Set<BeybladeConfiguration>();
+    public DbSet<BeybladeConfigurationPart> BeybladeConfigurationParts => Set<BeybladeConfigurationPart>();
     public DbSet<Battle> Battles => Set<Battle>();
     public DbSet<BattleLineup> BattleLineups => Set<BattleLineup>();
     public DbSet<BattleLineupSelection> BattleLineupSelections => Set<BattleLineupSelection>();
@@ -27,13 +31,38 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         NormalizeUserIdentities();
+        ProtectConfigurations();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         NormalizeUserIdentities();
+        ProtectConfigurations();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void ProtectConfigurations()
+    {
+        foreach (var entry in ChangeTracker.Entries<Beyblade>())
+            if (entry.State == EntityState.Modified && entry.Property(x => x.UpperName).IsModified &&
+                entry.Property(x => x.UpperName).OriginalValue is not null)
+                throw new InvalidOperationException("A Beyblade's assigned upper name is immutable.");
+        foreach (var entry in ChangeTracker.Entries<Part>())
+            if (entry.State == EntityState.Modified &&
+                (entry.Property(x => x.Category).IsModified || entry.Property(x => x.IntegratesRatchet).IsModified))
+                throw new InvalidOperationException("A saved part's category and assembly structure are immutable.");
+        foreach (var entry in ChangeTracker.Entries<BeybladeConfiguration>())
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+                throw new InvalidOperationException("Saved Beyblade configurations are immutable.");
+        foreach (var entry in ChangeTracker.Entries<BeybladeConfigurationPart>())
+        {
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+                throw new InvalidOperationException("Saved configuration parts are immutable.");
+            if (entry.State == EntityState.Added &&
+                (entry.Entity.Configuration is null || Entry(entry.Entity.Configuration).State != EntityState.Added))
+                throw new InvalidOperationException("Parts must be saved together with a new complete configuration.");
+        }
     }
 
     private void NormalizeUserIdentities()
@@ -50,6 +79,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        PartModelConfiguration.Configure(modelBuilder);
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasIndex(x => x.NormalizedAccount).IsUnique();
@@ -72,11 +102,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.ToTable(t =>
             {
-                t.HasCheckConstraint("CK_Battle_DifferentPlayers", "PlayerAId IS NULL OR PlayerBId IS NULL OR PlayerAId <> PlayerBId");
-                t.HasCheckConstraint("CK_Battle_ScoreToWin", "ScoreToWin > 0");
-                t.HasCheckConstraint("CK_Battle_Scores", "SideAScore >= 0 AND SideBScore >= 0");
-                t.HasCheckConstraint("CK_Battle_LineupSequenceNo", "LineupSequenceNo > 0");
-                t.HasCheckConstraint("CK_Battle_SourceMatch", "(SourceType = 0 AND Status <> 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NULL) OR (SourceType IN (1, 2) AND ((Status <> 7 AND TournamentMatchId IS NOT NULL AND VoidedTournamentMatchId IS NULL) OR (Status = 7 AND TournamentMatchId IS NULL AND VoidedTournamentMatchId IS NOT NULL AND VoidedByUserId IS NOT NULL AND VoidedAtUtc IS NOT NULL AND LENGTH(TRIM(VoidReason)) > 0 AND VoidSnapshot IS NOT NULL)))");
+                t.HasCheckConstraint("CK_Battle_DifferentPlayers", "\"PlayerAId\" IS NULL OR \"PlayerBId\" IS NULL OR \"PlayerAId\" <> \"PlayerBId\"");
+                t.HasCheckConstraint("CK_Battle_ScoreToWin", "\"ScoreToWin\" > 0");
+                t.HasCheckConstraint("CK_Battle_Scores", "\"SideAScore\" >= 0 AND \"SideBScore\" >= 0");
+                t.HasCheckConstraint("CK_Battle_LineupSequenceNo", "\"LineupSequenceNo\" > 0");
+                t.HasCheckConstraint("CK_Battle_SourceMatch", "(\"SourceType\" = 0 AND \"Status\" <> 7 AND \"TournamentMatchId\" IS NULL AND \"VoidedTournamentMatchId\" IS NULL) OR (\"SourceType\" IN (1, 2) AND ((\"Status\" <> 7 AND \"TournamentMatchId\" IS NOT NULL AND \"VoidedTournamentMatchId\" IS NULL) OR (\"Status\" = 7 AND \"TournamentMatchId\" IS NULL AND \"VoidedTournamentMatchId\" IS NOT NULL AND \"VoidedByUserId\" IS NOT NULL AND \"VoidedAtUtc\" IS NOT NULL AND LENGTH(TRIM(\"VoidReason\")) > 0 AND \"VoidSnapshot\" IS NOT NULL)))");
             });
             entity.Property(x => x.VoidReason).HasMaxLength(500);
             entity.Property(x => x.Version).IsConcurrencyToken();
@@ -97,7 +127,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(x => x.DedupeKey).HasMaxLength(200);
             entity.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.UserId, x.DedupeKey }).IsUnique()
-                .HasFilter("ResolvedAtUtc IS NULL AND DedupeKey IS NOT NULL");
+                .HasFilter("\"ResolvedAtUtc\" IS NULL AND \"DedupeKey\" IS NOT NULL");
             entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -126,13 +156,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.ToTable(t =>
             {
-                t.HasCheckConstraint("CK_BattleLineupSelection_PositionNo", "PositionNo > 0");
-                t.HasCheckConstraint("CK_BattleLineupSelection_SequenceNo", "SequenceNo > 0");
+                t.HasCheckConstraint("CK_BattleLineupSelection_PositionNo", "\"PositionNo\" > 0");
+                t.HasCheckConstraint("CK_BattleLineupSelection_SequenceNo", "\"SequenceNo\" > 0");
             });
             entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.UserId, x.PositionNo }).IsUnique();
             entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.BeybladeId }).IsUnique();
             entity.Property(x => x.PlayerDisplayNameSnapshot).HasMaxLength(64).IsRequired();
-            entity.Property(x => x.BeybladeNameSnapshot).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.BeybladeNameSnapshot).HasMaxLength(520).IsRequired();
             entity.HasOne(x => x.Battle).WithMany(x => x.LineupSelections).HasForeignKey(x => x.BattleId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Beyblade).WithMany().HasForeignKey(x => x.BeybladeId).OnDelete(DeleteBehavior.Restrict);
@@ -142,8 +172,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.ToTable(t =>
             {
-                t.HasCheckConstraint("CK_BattleTeamOrderSelection_PositionNo", "PositionNo > 0");
-                t.HasCheckConstraint("CK_BattleTeamOrderSelection_SequenceNo", "SequenceNo > 0");
+                t.HasCheckConstraint("CK_BattleTeamOrderSelection_PositionNo", "\"PositionNo\" > 0");
+                t.HasCheckConstraint("CK_BattleTeamOrderSelection_SequenceNo", "\"SequenceNo\" > 0");
             });
             entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.TournamentEntryId, x.PositionNo }).IsUnique();
             entity.HasIndex(x => new { x.BattleId, x.SequenceNo, x.TournamentEntryId, x.UserId }).IsUnique();
@@ -183,10 +213,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.ToTable(t =>
             {
-                t.HasCheckConstraint("CK_Tournament_TargetEntryCount", "TargetEntryCount BETWEEN 2 AND 512");
-                t.HasCheckConstraint("CK_Tournament_ScoreToWin", "ScoreToWin > 0");
-                t.HasCheckConstraint("CK_Tournament_BeybladesPerPlayer", "BeybladesPerPlayer > 0");
-                t.HasCheckConstraint("CK_Tournament_TeamSize", "(Mode = 0 AND TeamSize IS NULL) OR (Mode = 1 AND TeamSize IN (2, 3))");
+                t.HasCheckConstraint("CK_Tournament_TargetEntryCount", "\"TargetEntryCount\" BETWEEN 2 AND 512");
+                t.HasCheckConstraint("CK_Tournament_ScoreToWin", "\"ScoreToWin\" > 0");
+                t.HasCheckConstraint("CK_Tournament_BeybladesPerPlayer", "\"BeybladesPerPlayer\" > 0");
+                t.HasCheckConstraint("CK_Tournament_TeamSize", "(\"Mode\" = 0 AND \"TeamSize\" IS NULL) OR (\"Mode\" = 1 AND \"TeamSize\" IN (2, 3))");
             });
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
             entity.Property(x => x.Notes).HasMaxLength(1000);
@@ -212,7 +242,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<TournamentEntryMember>(entity =>
         {
-            entity.ToTable(t => t.HasCheckConstraint("CK_TournamentEntryMember_MemberOrder", "MemberOrder > 0"));
+            entity.ToTable(t => t.HasCheckConstraint("CK_TournamentEntryMember_MemberOrder", "\"MemberOrder\" > 0"));
             entity.Property(x => x.DisplayNameSnapshot).HasMaxLength(64).IsRequired();
             entity.HasIndex(x => new { x.TournamentId, x.UserId }).IsUnique();
             entity.HasIndex(x => new { x.TournamentEntryId, x.MemberOrder }).IsUnique();
@@ -235,11 +265,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.ToTable(t =>
             {
-                t.HasCheckConstraint("CK_TournamentMatch_RoundNumber", "RoundNumber > 0");
-                t.HasCheckConstraint("CK_TournamentMatch_MatchNumber", "MatchNumber > 0");
-                t.HasCheckConstraint("CK_TournamentMatch_SequenceNumber", "SequenceNumber > 0");
-                t.HasCheckConstraint("CK_TournamentMatch_SideAReference", "SideASourceReferenceId > 0");
-                t.HasCheckConstraint("CK_TournamentMatch_ByeSide", "IsBye = 0 OR SideBSourceReferenceId IS NULL");
+                t.HasCheckConstraint("CK_TournamentMatch_RoundNumber", "\"RoundNumber\" > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_MatchNumber", "\"MatchNumber\" > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_SequenceNumber", "\"SequenceNumber\" > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_SideAReference", "\"SideASourceReferenceId\" > 0");
+                t.HasCheckConstraint("CK_TournamentMatch_ByeSide", "NOT \"IsBye\" OR \"SideBSourceReferenceId\" IS NULL");
             });
             entity.Property(x => x.ResolutionReason).HasMaxLength(500);
             entity.Property(x => x.Version).IsConcurrencyToken();

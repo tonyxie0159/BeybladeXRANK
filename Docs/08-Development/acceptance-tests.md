@@ -5,13 +5,17 @@
 - [x]：目前已有對應自動測試，且最近一次完整測試通過。
 - [ ]：有效需求仍待實作、補自動測試或完成指定人工驗收。
 
-最近一次基準（2026-08-23）：
+最近一次基準（2026-09-05）：
 
 ```powershell
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：155 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
+結果：208 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
+
+零件功能證據：279 筆冪等匯入、完整組裝、一體式及 CX 結構、名稱快照與通用名稱、新增／補登交易、所有權與防偽、偽造通用名稱忽略；CX 上蓋命名相同時超越／輔助戰刃更換建立新版本，相同組合重用；快速／團體對戰選取指定版本並在重排保留；版本戰績加總、未記錄版本、來源／站位篩選與他人資料禁止存取。舊 SQLite 無 UpperName 仍可讀取。
+
+2026-09-05 隔離 SQLite 測試站瀏覽器驗證：全形「ｚ」找到 Z 輔助戰刃並保存同名 CX v3；缺少軸心阻擋提交、Op 整合固鎖時預覽不含固鎖；先選陀螺再選較舊 v1，密封後仍顯示 v1。390px viewport（可用內容寬 375px）編輯頁與出戰頁無水平溢出。修正搜尋欄位的 Razor 標籤展開並加入 HTTP 回歸測試。PostgreSQL 新版 migration 尚未在實際資料庫套用，Docker engine 未啟動。
 
 ## 已有自動證據
 
@@ -85,6 +89,8 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [x] Tournament 取消保留完成 Round、排除當前 Event，並保存原因／報名／賽程。
 - [x] Void／Reopen 保留舊 Battle audit、排除統計並建立乾淨替代流程。
 - [x] 循環與瑞士既有 tie-break 計算可重現；Bye／Walkover 不虛構比分。
+- [x] 單循環／瑞士若冠軍仍完全同分，自動建立平衡 Playoff、保持 InProgress，完成後只覆寫冠軍且不改寫例行排名統計。
+- [x] 單淘汰依決賽／淘汰輪次、雙敗依決勝 Grand Final／第二敗階段產生正式名次與並列，且完成前不提前公布。
 
 ### Statistics／Persistence
 
@@ -93,18 +99,13 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [x] 陀螺來源篩選、樣本數、得失分、平均值、ResultType 與 LaunchFault。
 - [x] 對手／對手陀螺使用實際團體小局對手。
 - [x] 歷史顯示來源與 Side，取消／Voided 規則正確排除。
-- [x] Migration 可建立現行表、相容資料 backfill，且 EF Model 無 pending migration。
+- [x] PostgreSQL initial migration 可建立完整現行 schema，SQLite cutover 工具可搬移既有資料，且 EF Model 無 pending migration。
 - [x] Tournament／Match／Participant Version 已配置 concurrency token。
-- [x] runtime SQLite 路徑與 Data Protection key 目錄落在統一 data directory。
+- [x] Runtime data directory 只管理持久化 Data Protection keys；正式資料庫不依賴應用容器內的檔案路徑。
 
-## 最近完成的 P1 流程
+## 尚待補充的驗收證據
 
-- [x] 單循環／瑞士完成固定 tie-break 後若冠軍仍完全同分，自動建立平衡 Playoff、保持 InProgress，完成後只覆寫冠軍且不改寫例行排名統計。
-- [x] 單淘汰依決賽／淘汰輪次、雙敗依決勝 Grand Final／第二敗階段產生正式名次與並列，且完成前不提前公布。
-
-## 有效需求但尚未完成
-
-### P2 UI／UX 與 Web functional 證據
+### UI／UX 與 Web functional
 
 - [x] Register、Login 與主要登入頁 HTTP／瀏覽器基本操作；驗證失敗按鈕恢復與主要 Layout 資源已覆蓋。
 - [ ] Logout、Settings 修改唯一玩家名稱以實際瀏覽器完整操作。
@@ -114,15 +115,19 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [x] 首頁功能卡不顯示編號、鈴鐺位於收合導覽外；對戰紀錄只有一個返回入口，結算頁顯示勝方、最終比分及回到首頁。
 - [ ] 建立私密 Lineup 不外洩及公開 Tournament read model 的 integration tests。
 
-### 已延後的併發與壓力證據
+### 併發與壓力
 
 - [ ] 使用兩個獨立 DbContext 模擬最後名額並行報名，只允許一個成功。
 - [ ] 對完成 Round／Battle／Match 的重複 HTTP POST 驗證不重複計分、晉級或通知。
 - [ ] 容量、長時間 SignalR／polling 與高頻寫入壓力測試。
 
-以上項目依目前產品優先順序延後，不阻擋 UI／UX 與一般使用者功能驗收。
+以上項目沒有固定 Phase 或 Step；實際優先順序與 PR 範圍以 GitHub issue 或使用者明確需求為準。
 
 ## 人工與部署驗收
+
+2026-09-04 PostgreSQL 轉移演練：solution build 為 0 warnings／0 errors，160 個自動化測試全數通過。使用 `postgres:18-bookworm` 的全新隔離容器匯入切換前 SQLite 備份，17 張應用資料表的筆數與所有純量欄位逐一一致，identity sequence 可由既有最大值繼續，對非空目標重複匯入會安全拒絕。另以隔離 Compose project 驗證 image build、資料庫 healthcheck、一次性 migration service 與 Web HTTP 200；重建服務後既有 PostgreSQL schema 仍保留。測試容器、網路及測試 volume 已清除，原始 SQLite 與切換前備份保留。
+
+2026-09-04 正式切換：停止狀態下重新備份作用中 SQLite 並核對 SHA-256，建立 `beybladexrank-postgres-data`、完成 17 張表的交易式匯入與逐欄驗證後啟動 Web。PostgreSQL 與 App 重啟後資料筆數、migration history、Data Protection key hash 與 HTTP 200 均保持正確。切換後 custom-format dump 已成功還原至拋棄式資料庫並核對 17 張表，驗證資料庫及容器內暫存 dump 隨後清除；主機上的 SQLite 與 PostgreSQL 備份保留。
 
 2026-08-20 UI 本機瀏覽器證據：公開首頁、Login 與登入後首頁可正常載入；登入後主導覽的 Home、Battles Create／Invitations、Beyblades Index／Create、Tournaments Index／Create、Statistics Index、Account Settings、Privacy 共 10 條 GET 路徑均有正確標題、無頁面錯誤、無桌面版水平溢出，且瀏覽器 console 無 error／warning。Register POST 以獨立測試資料目錄及有效 anti-forgery token 驗證成功。手機 viewport 套用與 Logout POST 遭本機瀏覽器控制安全層阻擋，仍保留未驗收狀態。
 
@@ -131,9 +136,10 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 - [ ] 快速邀請、私密提交、edit request、Side、計分、重排、Revision、棄權與取消以兩個帳號操作。
 - [ ] Tournament 個人、雙人六顆／四顆、三人 4／5 分制以多帳號完成至少一場。
 - [ ] 手機與平板尺寸不水平溢出，重要裁判按鈕可安全操作且不只依顏色傳達狀態。
-- [ ] Docker image build 成功，compose 啟動後 migration 完成。
-- [ ] Container restart 後 SQLite 與登入 Cookie keys 仍持久化。
-- [ ] SQLite／keys bind mount 與停止容器後備份／還原成功。
+- [x] Docker image build 成功，compose 啟動後 migration 完成。
+- [x] Container restart 後 PostgreSQL named volume 與登入 Cookie keys 仍持久化。
+- [x] SQLite cutover 匯入與 PostgreSQL dump／restore 成功。
+- [ ] Data Protection keys 的獨立備份／還原演練成功。
 - [ ] 同網路其他裝置可連線。
 - [ ] Cloudflare Tunnel HTTPS 可連線，forwarded headers 與 Secure Cookie 行為正確。
 - [ ] Quick Tunnel 僅標示短期分享；正式 named tunnel 的 host／proxy allow-list 經實機設定。

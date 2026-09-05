@@ -2,46 +2,44 @@
 
 ## 架構
 
-只容器化 ASP.NET Core Web Application；SQLite 不建立獨立 container。
+Compose 包含 PostgreSQL、一次性 EF migration service 與 ASP.NET Core Web Application。
 
 - container port：8080
-- runtime data：/app/data
-- host bind mount：專案根目錄 data/
+- PostgreSQL port：僅綁定 localhost，預設 5432
+- database volume：beybladexrank-postgres-data
+- Data Protection keys：主機 `data/keys/` → `/app/data/keys`
 - restart policy：unless-stopped
 
-data/ 同時包含 SQLite database 與 Data Protection keys，必須被 Git 忽略並在 container restart／recreate 後保留。
+PostgreSQL 資料與登入金鑰必須在 container restart／recreate 後保留。具名 volume 不是備份，正式資料環境不得使用 `docker compose down -v`。
 
 ## 建置與啟動
 
 ```powershell
+Copy-Item .env.example .env
+# 修改 .env 的 POSTGRES_PASSWORD
 docker compose up -d --build
 ```
 
-啟動時 Application 自動套用 EF Core migration。正式交付前必須確認：
+`db` healthcheck 通過後，`migrate` service 套用 EF Core migration、冪等匯入零件目錄並成功結束，才啟動 `app`。Web Application 本身不在啟動時修改 schema。若從舊 SQLite 搬移，先用 DataMigration 工具完成空目標匯入，再執行 migrate service，避免零件預先匯入使目標不再為空。正式交付前必須確認：
 
 1. image build 成功。
 2. migration 完成且應用可在 localhost:8080 回應。
 3. compose restart 後帳號、Battle、Tournament 與登入 keys 仍存在。
-4. log 沒有 migration、SQLite lock、權限或 Data Protection 錯誤。
+4. log 沒有 migration、PostgreSQL 連線、權限或 Data Protection 錯誤。
 
 ## 資料與權限
 
 - 不把 database、keys 或 secret COPY 進 image。
-- container 執行帳號必須能讀寫 /app/data，但不應取得不必要的主機目錄。
-- bind mount 只指向明確的專案 data/，不掛載使用者家目錄或 repository 全部內容。
-- production connection string 若覆寫，SQLite Data Source 仍須解析到 runtime data directory。
+- PostgreSQL 密碼只由 `.env`、環境變數或正式 secret store 提供，不提交 Git。
+- app bind mount 只指向明確的 `data/keys/`，不掛載使用者家目錄或 repository 全部內容。
+- production connection string 必須指向 `db` service，且不在 log 顯示密碼。
 
 ## 備份與還原
 
-備份：
+備份以 `pg_dump -Fc` 寫到 PostgreSQL volume 外，並另外備份 `data/keys/`。每份備份記錄 image、PostgreSQL major 與 EF migration 版本。
 
-1. 停止 app container，避免複製中的 SQLite 寫入。
-2. 複製完整 data/；至少包含 beyblade.db 與 keys/。
-3. 記錄對應 image／migration 版本。
-4. 完成後重新啟動並檢查。
-
-還原必須在測試環境驗證 migration、登入 cookie／重新登入與歷史 Battle／Tournament 可讀。第一版不加入額外 backup service。
+還原必須先在測試資料庫驗證 migration、登入 cookie／重新登入與歷史 Battle／Tournament 可讀，再操作正式資料庫。SQLite cutover 備份保持唯讀，至少保留至 PostgreSQL 備份與還原演練完成。
 
 ## 驗收界線
 
-docker compose config 成功只證明 YAML 可解析，不等於 image build、migration、restart persistence 或外部連線已驗收。這些項目在 acceptance-tests.md 保持未完成，直到有實機證據。
+docker compose config 成功只證明 YAML 可解析，不等於 image build、migration、SQLite 匯入、restart persistence、備份還原或外部連線已驗收。這些項目在 acceptance-tests.md 保持未完成，直到有實機證據。

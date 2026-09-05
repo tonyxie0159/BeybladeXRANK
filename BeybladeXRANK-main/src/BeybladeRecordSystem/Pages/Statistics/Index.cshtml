@@ -128,7 +128,7 @@
             @foreach (var item in Model.Beyblades)
             {
                 <tr>
-                    <td class="fw-semibold">@item.Name</td>
+                    <td class="fw-semibold"><a asp-page="Beyblade" asp-route-id="@item.BeybladeId">@item.Name</a></td>
                     <td>@item.Wins / @item.Losses</td>
                     <td>@item.WinRate.ToString("P0")</td>
                     <td>@item.Score / @item.AgainstScore</td>

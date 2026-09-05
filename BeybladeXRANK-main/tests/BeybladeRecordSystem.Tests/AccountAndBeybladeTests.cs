@@ -53,8 +53,13 @@ public class AccountAndBeybladeTests
         await fixture.Db.SaveChangesAsync();
         var service = new BeybladeService(fixture.Db);
 
-        Assert.True((await service.CreateAsync(user.Id, "Phoenix")).Succeeded);
-        Assert.False((await service.CreateAsync(user.Id, "Phoenix")).Succeeded);
+        await PartCatalog.ImportAsync(fixture.Db);
+        var ids = await fixture.Db.Parts.Where(x =>
+            (x.Category == BeybladeRecordSystem.Domain.Enums.PartCategory.Blade && x.Name == "時鐘幻象") ||
+            (x.Category == BeybladeRecordSystem.Domain.Enums.PartCategory.Ratchet && x.Name == "4-55") ||
+            (x.Category == BeybladeRecordSystem.Domain.Enums.PartCategory.Bit && x.Name == "S")).Select(x => x.Id).ToArrayAsync();
+        Assert.True((await service.CreateAsync(user.Id, "Phoenix", ids)).Succeeded);
+        Assert.False((await service.CreateAsync(user.Id, "Phoenix", ids)).Succeeded);
         var blade = (await service.GetMyBeybladesAsync(user.Id)).Single();
         Assert.True((await service.RenameAsync(user.Id, blade.Id, "Dran")).Succeeded);
         Assert.True((await service.DeleteAsync(user.Id, blade.Id)).Succeeded);

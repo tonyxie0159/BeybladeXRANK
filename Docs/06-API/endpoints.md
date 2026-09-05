@@ -2,7 +2,7 @@
 
 本專案使用 Razor Pages，不建立公開 REST API。PageModel 只能呼叫本文件列出的有效 Application Service 契約；方法名稱以目前 C# Async 命名為準。
 
-「待補」表示有效產品需求但目前實作尚未完成，不代表可改回舊流程。實作狀態以 08-Development/development-plan.md 為準。
+文件中的「待補」代表尚缺實作或驗收證據，不代表可改回舊流程。開發方式與待補驗收入口以 `08-Development/development-plan.md` 為準，完成證據以 `08-Development/acceptance-tests.md` 為準。
 
 ## AuthService
 
@@ -15,11 +15,20 @@ Login 回傳 User 給 PageModel 建立 authentication cookie；Service 不保存
 ## BeybladeService
 
 - GetMyBeybladesAsync(userId)
-- CreateAsync(userId, name)
+- CreateAsync(userId, name, partIds)
 - RenameAsync(userId, beybladeId, name)
 - DeleteAsync(userId, beybladeId)
 
 所有 mutation 驗證 Beyblade.UserId；Delete 是軟刪除。
+
+## BeybladeConfigurationService
+
+- GetActivePartsAsync(series?)
+- GetMineAsync(userId, beybladeId)：取得最新版本。
+- GetVersionsAsync(userId, beybladeId)：取得自己的所有配置版本。
+- RecordAsync(userId, beybladeId, partIds, customName?)：完整驗證後新增或重用版本，可同交易改名；上蓋命名改變時拒絕並要求建立另一顆陀螺。
+
+詳細規則見 [parts-system.md](../03-Database/parts-system.md)。出戰的 configurationIds 須與 bladeIds 按位置一一對應；只有尚無配置的舊陀螺可用 0。公開前維持原有所有權與私密限制。
 
 ## QuickBattleFlowService
 
@@ -30,7 +39,7 @@ Login 回傳 User 給 PageModel 建立 authentication cookie；Service 不保存
 - DeclineInvitationAsync(invitationId, inviteeUserId)
 - WithdrawInvitationAsync(invitationId, inviterUserId)
 - GetWorkspaceAsync(battleId, userId)
-- SubmitLineupAsync(battleId, userId, orderedBladeIds)
+- SubmitLineupAsync(battleId, userId, orderedBladeIds, configurationIds)
 - ConfirmLineupAsync(battleId, userId)
 - RequestLineupEditAsync(battleId, userId)
 - RespondLineupEditAsync(battleId, userId, accept)
@@ -130,7 +139,7 @@ Tournament 建立及賽程服務必須從 Server catalog 推導 RuleSet、限制
 - GetActionableAsync(tournamentId, userId)
 - GetActionableForUserAsync(userId, tournamentId?)
 - RespondParticipationAsync(matchId, userId, accept)
-- SubmitLineupAsync(matchId, userId, bladeIds)
+- SubmitLineupAsync(matchId, userId, bladeIds, configurationIds)
 - SubmitIndividualLineupAsync(matchId, userId, bladeIds)
 - AssignMatchRepresentativeAsync(matchId, userId, newRepresentativeUserId)
 - SubmitTeamOrderAsync(matchId, representativeUserId, orderedUserIds)
@@ -165,6 +174,7 @@ Match workspace 只提供主辦方與該 Match 參賽者的私密資料。觀眾
 - GetBeybladeSourceSamplesAsync(userId)
 - GetBeybladeSideSamplesAsync(userId, source)
 - GetBeybladeStatisticsAsync(userId, sort, source, side)
+- GetBeybladeVersionStatisticsAsync(userId, beybladeId, source, side)：只查詢自己的母陀螺，依當場配置分版本，null 保留為未記錄版本。
 - GetOpponentStatisticsAsync(userId, sort)
 - GetOpponentBeybladeStatisticsAsync(userId, opponentId, sort)
 - GetBattleHistoryAsync(userId, source)

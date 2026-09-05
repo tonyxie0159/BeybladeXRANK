@@ -82,7 +82,7 @@
         <p>各位置不得重複。提交後不能更換，雙方所有必要資料完成前只會顯示自己的選擇。</p>
         <form method="post" asp-page-handler="SubmitLineup">
         @for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++)
-        { <label class="form-label">位置 @(i + 1)</label><select name="BladeIds" class="form-select mb-2" required><option value="">請選擇</option>@foreach (var blade in Model.Workspace.AvailableBeyblades) { <option value="@blade.Id">@blade.Name</option> }</select> }
+        { <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(i + 1, Model.Workspace.AvailableBeyblades)" /> }
         <button class="btn btn-primary">密封提交陣容</button></form>
     }
     else { <p class="mb-0">等待雙方提交陣容。</p> }
@@ -161,6 +161,7 @@
 <div id="match-poll-state" data-token="@Model.Workspace.PollToken" hidden></div>
 
 @section Scripts {
+    <script src="~/js/lineup-versions.js" asp-append-version="true"></script>
 <script>
 (() => {
     const state = document.getElementById('match-poll-state');

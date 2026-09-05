@@ -2,6 +2,9 @@ using BeybladeRecordSystem.Domain.Enums;
 
 namespace BeybladeRecordSystem.ViewModels;
 
+public sealed record BeybladeVersionStatisticsRow(int? ConfigurationId, string Label, string Parts, BeybladeStatisticsViewModel Summary);
+public sealed record BeybladeVersionStatistics(string Name, string? UpperName, BeybladeStatisticsViewModel Total, IReadOnlyList<BeybladeVersionStatisticsRow> Versions);
+
 public sealed record SideStatisticsViewModel(int Wins, int Losses, decimal WinRate)
 {
     public int Samples => Wins + Losses;
