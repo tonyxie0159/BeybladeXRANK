@@ -14,7 +14,11 @@ else
             <div>
                 <strong>@beyblade.Name</strong>
                 <div class="text-muted">@(beyblade.UpperName ?? "尚未登錄零件") · @beyblade.Configurations.Count 個版本</div>
-                @if (beyblade.Configuration is { } latest) { <small class="text-muted">最新：@latest.VersionLabel</small> }
+                @if (beyblade.Configuration is { } latest)
+                {
+                    <small class="text-muted d-block">最新：@latest.VersionLabel</small>
+                    <small class="text-muted d-block">@latest.PartsSummary</small>
+                }
             </div>
             <span class="d-flex gap-2">
                 <a asp-page="Edit" asp-route-id="@beyblade.Id" class="btn btn-outline-primary btn-sm">@(beyblade.Configuration is null ? "編輯／補登零件" : "編輯／新增版本")</a>

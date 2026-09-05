@@ -45,6 +45,39 @@ public class BattleService(AppDbContext db, IRealtimePublisher? realtimePublishe
         return ServiceResult<BattleRound>.Success(round);
     }
 
+    public async Task<ServiceResult<BattleRound>> AssignSidesAndStartAsync(
+        int battleId,
+        int creatorId,
+        BattleSide sideA)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var battle = await db.Battles
+            .Include(x => x.Lineups)
+            .SingleOrDefaultAsync(x => x.Id == battleId);
+        if (battle is null) return ServiceResult<BattleRound>.Failure("找不到對戰。");
+        if (battle.SourceType != BattleSourceType.Quick)
+            return ServiceResult<BattleRound>.Failure("賽事對局必須由賽事裁判頁面開始。");
+        if (battle.CreatedByUserId != creatorId)
+            return ServiceResult<BattleRound>.Failure("只有建立者可指定 Side 並開始對戰。");
+        if (battle.Status != BattleStatus.LineupLocked)
+            return ServiceResult<BattleRound>.Failure("雙方確認陣容後才能開始對戰。");
+
+        var first = battle.Lineups.SingleOrDefault(x => x.IsCurrent && x.PositionNo == 1);
+        if (first is null) return ServiceResult<BattleRound>.Failure("找不到已鎖定的陣容。");
+
+        var now = DateTime.UtcNow;
+        var round = CreateRound(battle, first, 1);
+        battle.SideADesignation = sideA;
+        battle.Status = BattleStatus.InProgress;
+        battle.StartedAtUtc = now;
+        battle.Version = Guid.NewGuid().ToByteArray();
+        db.BattleRounds.Add(round);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await PublishBattleStateAsync(battle);
+        return ServiceResult<BattleRound>.Success(round);
+    }
+
     public async Task<ServiceResult> RecordLaunchFaultAsync(int battleId, int roundId, int creatorId, int actorPlayerId)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();

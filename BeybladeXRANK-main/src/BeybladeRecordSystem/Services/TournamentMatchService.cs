@@ -16,6 +16,7 @@ public record TournamentMatchWorkspace(
     IReadOnlyList<BattleLineupSelection> CurrentPrivateSelections,
     IReadOnlyList<BattleTeamOrderSelection> CurrentPrivateTeamOrder,
     IReadOnlyList<Beyblade> AvailableBeyblades,
+    IReadOnlyList<LineupPresetItem> RecentLineup,
     bool IsOrganizer)
 {
     public string PollToken => string.Join(':',
@@ -76,7 +77,12 @@ public class TournamentMatchService(AppDbContext db)
         var blades = participant is null
             ? []
             : await db.Beyblades.WithConfiguration().Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync();
-        return new TournamentMatchWorkspace(match, participant, visible, visibleTeamOrder, privateSelections, privateTeamOrder, blades, isOrganizer);
+        var recentLineup = participant is null || blades.Count == 0 ||
+            match.Status != TournamentMatchStatus.LineupSelection || privateSelections.Count > 0
+            ? []
+            : await LineupPreset.GetMostRecentValidAsync(
+                db, userId, match.Tournament.BeybladesPerPlayer, blades);
+        return new TournamentMatchWorkspace(match, participant, visible, visibleTeamOrder, privateSelections, privateTeamOrder, blades, recentLineup, isOrganizer);
     }
 
     public async Task<IReadOnlyList<TournamentMatchAction>> GetActionableAsync(int tournamentId, int userId)
@@ -249,6 +255,7 @@ public class TournamentMatchService(AppDbContext db)
     public async Task<ServiceResult> SubmitLineupAsync(int matchId, int userId, IReadOnlyList<int> bladeIds, IReadOnlyList<int>? configurationIds = null)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
+        await LineupPartRules.AcquireSubmissionLockAsync(db, matchId);
         var match = await MatchQuery().SingleOrDefaultAsync(x => x.Id == matchId);
         if (match is null) return ServiceResult.Failure("找不到對局。");
         var expectedCount = match.Tournament.BeybladesPerPlayer;
@@ -267,6 +274,23 @@ public class TournamentMatchService(AppDbContext db)
         if (blades.Count != expectedCount) return ServiceResult.Failure("所選陀螺必須屬於你且尚未刪除。");
         var versions = LineupVersions.Resolve(bladeIds, configurationIds, blades);
         if (!versions.Succeeded) return ServiceResult.Failure(versions.Error!);
+        var teammateIds = match.Participants
+            .Where(x => x.TournamentEntryId == participant.TournamentEntryId)
+            .Select(x => x.UserId)
+            .ToHashSet();
+        var teammateConfigurationIds = match.Battle.LineupSelections
+            .Where(x => x.SequenceNo == 1 && teammateIds.Contains(x.UserId) && x.BeybladeConfigurationId.HasValue)
+            .Select(x => x.BeybladeConfigurationId!.Value)
+            .ToArray();
+        List<BeybladeConfiguration> teammateConfigurations = teammateConfigurationIds.Length == 0
+            ? []
+            : await db.BeybladeConfigurations
+                .Include(x => x.Parts)
+                .Where(x => teammateConfigurationIds.Contains(x.Id))
+                .ToListAsync();
+        var partValidation = LineupPartRules.ValidateNoDuplicates(
+            versions.Value!.Values.Concat(teammateConfigurations));
+        if (!partValidation.Succeeded) return partValidation;
         var userName = await db.Users.Where(x => x.Id == userId).Select(x => x.DisplayName).SingleAsync();
         var now = DateTime.UtcNow;
         for (var i = 0; i < bladeIds.Count; i++)

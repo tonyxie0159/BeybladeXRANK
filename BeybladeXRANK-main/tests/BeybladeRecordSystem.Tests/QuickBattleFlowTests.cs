@@ -325,6 +325,40 @@ public class QuickBattleFlowTests
     }
 
     [Fact]
+    public async Task AssignSidesAndStart_StartsQuickBattleAtomicallyAndPreservesOwnership()
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+        var battleId = await fixture.CreateBattleInReviewAsync();
+        Assert.True((await fixture.Flow.ConfirmLineupAsync(battleId, fixture.PlayerA.Id)).Succeeded);
+        Assert.True((await fixture.Flow.ConfirmLineupAsync(battleId, fixture.PlayerB.Id)).Succeeded);
+
+        Assert.False((await fixture.Battles.AssignSidesAndStartAsync(
+            battleId, fixture.PlayerB.Id, BattleSide.X)).Succeeded);
+        var stillLocked = await fixture.Db.Battles.Include(x => x.Rounds).SingleAsync(x => x.Id == battleId);
+        Assert.Equal(BattleStatus.LineupLocked, stillLocked.Status);
+        Assert.Null(stillLocked.SideADesignation);
+        Assert.Empty(stillLocked.Rounds);
+
+        fixture.Publisher.Events.Clear();
+        var startedResult = await fixture.Battles.AssignSidesAndStartAsync(
+            battleId, fixture.PlayerA.Id, BattleSide.X);
+
+        Assert.True(startedResult.Succeeded);
+        fixture.Db.ChangeTracker.Clear();
+        var started = await fixture.Db.Battles.Include(x => x.Rounds).SingleAsync(x => x.Id == battleId);
+        Assert.Equal(BattleStatus.InProgress, started.Status);
+        Assert.Equal(BattleSide.X, started.SideADesignation);
+        Assert.NotNull(started.StartedAtUtc);
+        Assert.Single(started.Rounds);
+
+        var events = fixture.Publisher.Events.Where(x => x.EventType == "battle-state").ToList();
+        Assert.Equal(2, events.Count);
+        Assert.All(events, item => Assert.Equal(
+            $"/Battles/Battle/{battleId}",
+            item.Payload.GetType().GetProperty("targetUrl")!.GetValue(item.Payload)));
+    }
+
+    [Fact]
     public async Task Reorder_IsPrivatePerPlayerAndAppliesOnlyAfterBothSubmit()
     {
         await using var fixture = await QuickBattleFixture.CreateAsync();
@@ -453,6 +487,70 @@ public class QuickBattleFlowTests
             x => x.BattleId == nextBattle && x.BeybladeId == bladeId)).BeybladeConfigurationId);
         Assert.Equal("renamed · v1 · 時鐘幻象4-55S", (await fixture.Db.BattleLineupSelections.SingleAsync(
             x => x.BattleId == nextBattle && x.BeybladeId == bladeId)).BeybladeNameSnapshot);
+    }
+
+    [Fact]
+    public async Task ConfiguredLineup_RejectsDuplicateParts_AndAcceptsDistinctVersions()
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+        await PartCatalog.ImportAsync(fixture.Db);
+        var configurations = new BeybladeConfigurationService(fixture.Db);
+
+        async Task<int> RecordAsync(int bladeId, string bladeName, string ratchetName, string bitName)
+        {
+            var partIds = await fixture.Db.Parts
+                .Where(x =>
+                    (x.Category == PartCategory.Blade && x.Name == bladeName) ||
+                    (x.Category == PartCategory.Ratchet && x.Name == ratchetName) ||
+                    (x.Category == PartCategory.Bit && x.Name == bitName))
+                .Select(x => x.Id)
+                .ToArrayAsync();
+            Assert.Equal(3, partIds.Length);
+            Assert.True((await configurations.RecordAsync(fixture.PlayerA.Id, bladeId, partIds)).Succeeded);
+            return await fixture.Db.BeybladeConfigurations
+                .Where(x => x.BeybladeId == bladeId)
+                .OrderByDescending(x => x.VersionNo)
+                .Select(x => x.Id)
+                .FirstAsync();
+        }
+
+        var first = await RecordAsync(fixture.PlayerABladeIds[0], "時鐘幻象", "1-50", "J");
+        var duplicated = await RecordAsync(fixture.PlayerABladeIds[1], "地獄鐮刀", "1-50", "S");
+        var third = await RecordAsync(fixture.PlayerABladeIds[2], "騎士長槍", "3-60", "B");
+        var rejectedBattleId = await fixture.CreateAcceptedBattleAsync();
+
+        var rejected = await fixture.Flow.SubmitLineupAsync(
+            rejectedBattleId,
+            fixture.PlayerA.Id,
+            fixture.PlayerABladeIds,
+            [first, duplicated, third]);
+
+        Assert.False(rejected.Succeeded);
+        Assert.Contains("1-50", rejected.Error);
+        Assert.Empty(await fixture.Db.BattleLineupSelections
+            .Where(x => x.BattleId == rejectedBattleId && x.UserId == fixture.PlayerA.Id)
+            .ToListAsync());
+
+        var distinct = await RecordAsync(fixture.PlayerABladeIds[1], "地獄鐮刀", "2-60", "S");
+        var acceptedBattleId = await fixture.CreateAcceptedBattleAsync();
+        Assert.True((await fixture.Flow.SubmitLineupAsync(
+            acceptedBattleId,
+            fixture.PlayerA.Id,
+            fixture.PlayerABladeIds,
+            [first, distinct, third])).Succeeded);
+
+        var completed = await fixture.Db.Battles.SingleAsync(x => x.Id == acceptedBattleId);
+        completed.Status = BattleStatus.Completed;
+        completed.CompletedAtUtc = DateTime.UtcNow;
+        await fixture.Db.SaveChangesAsync();
+        var nextBattleId = await fixture.CreateAcceptedBattleAsync();
+
+        var workspace = await fixture.Flow.GetWorkspaceAsync(nextBattleId, fixture.PlayerA.Id);
+
+        Assert.Equal(
+            new[] { (fixture.PlayerABladeIds[0], first), (fixture.PlayerABladeIds[1], distinct), (fixture.PlayerABladeIds[2], third) },
+            workspace!.RecentLineup.Select(x => (x.BeybladeId, x.ConfigurationId)));
+        Assert.Empty((await fixture.Flow.GetWorkspaceAsync(nextBattleId, fixture.PlayerB.Id))!.RecentLineup);
     }
 
     private sealed class QuickBattleFixture : IAsyncDisposable

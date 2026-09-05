@@ -39,9 +39,17 @@ public class MatchModel(TournamentMatchService matchService, IRealtimePublisher?
             accept ? "已確認出賽。" : "已拒絕出賽，本場將以不戰勝處理。");
 
     public async Task<IActionResult> OnPostSubmitLineupAsync(int id)
-        => await RedirectWithAsync(ModelState.IsValid
+    {
+        var result = ModelState.IsValid
             ? await matchService.SubmitLineupAsync(id, User.GetRequiredUserId(), BladeIds, ConfigurationIds)
-            : ServiceResult.Failure("請選擇有效的陀螺與版本。"), id, "陣容已密封提交。");
+            : ServiceResult.Failure("請選擇有效的陀螺與版本。");
+        if (result.Succeeded)
+            return await RedirectWithAsync(result, id, "陣容已密封提交。");
+
+        if (!await LoadAsync(id)) return NotFound();
+        ModelState.AddModelError(string.Empty, result.Error ?? "無法提交陣容。");
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostSubmitTeamOrderAsync(int id)
         => await RedirectWithAsync(await matchService.SubmitTeamOrderAsync(id, User.GetRequiredUserId(), OrderedUserIds), id, "本隊出戰順序已密封提交。");

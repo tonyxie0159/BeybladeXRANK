@@ -1,12 +1,17 @@
+@using System.Text.Json
 @model BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel
-<div class="row g-2 mb-4" data-version-picker>
+<div class="row g-2 mb-4"
+     data-version-picker
+     data-position="@Model.Position"
+     data-recent-blade-id="@Model.RecentBeybladeId"
+     data-recent-configuration-id="@Model.RecentConfigurationId">
     <div class="col-md-6">
         <label for="blade-@Model.Position" class="form-label">位置 @Model.Position · 陀螺</label>
         <input type="search" class="form-control mb-2" placeholder="搜尋自訂名稱或上蓋" aria-label="搜尋位置 @Model.Position 的陀螺" data-blade-search hidden />
         <select id="blade-@Model.Position" name="BladeIds" class="form-select" data-blade required>
             <option value="">請選擇陀螺</option>
             @foreach (var blade in Model.Beyblades)
-            { <option value="@blade.Id">@blade.Name · @(blade.UpperName ?? "未登錄零件")</option> }
+            { <option value="@blade.Id" selected="@(blade.Id == Model.SelectedBeybladeId)">@blade.Name · @(blade.UpperName ?? "未登錄零件")</option> }
         </select>
     </div>
     <div class="col-md-6">
@@ -17,11 +22,12 @@
             @foreach (var blade in Model.Beyblades)
             {
                 if (blade.Configurations.Count == 0)
-                { <option value="0" data-blade-id="@blade.Id" data-summary="此舊陀螺尚未登錄版本">@blade.Name · 未記錄版本</option> }
+                { <option value="0" data-blade-id="@blade.Id" data-summary="此舊陀螺尚未登錄版本" data-parts="[]" selected="@(blade.Id == Model.SelectedBeybladeId && Model.SelectedConfigurationId == 0)">@blade.Name · 未記錄版本</option> }
                 foreach (var version in blade.Configurations.OrderByDescending(x => x.VersionNo))
-                { <option value="@version.Id" data-blade-id="@blade.Id" data-summary="@version.PartsSummary">@version.VersionLabel</option> }
+                { <option value="@version.Id" data-blade-id="@blade.Id" data-summary="@version.PartsSummary" data-parts="@JsonSerializer.Serialize(version.Parts.Select(part => new { id = part.PartId, name = part.PartNameSnapshot }))" selected="@(version.Id == Model.SelectedConfigurationId)">@version.VersionLabel</option> }
             }
         </select>
     </div>
     <p class="small text-muted mb-0" data-version-summary aria-live="polite"></p>
+    <p class="small text-warning mb-0" data-lineup-conflict role="status" hidden></p>
 </div>

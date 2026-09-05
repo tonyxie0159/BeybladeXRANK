@@ -27,7 +27,7 @@
 { <div class="alert alert-secondary">本場已隨整場比賽取消；已完成回合仍保留，未完成回合不列入統計。</div> }
 @if (match.VoidedBattles.Any())
 {
-    <section class="card card-body mb-3"><h2 class="h5">已撤銷 Battle 紀錄</h2><ul class="mb-0">@foreach (var voided in match.VoidedBattles.OrderByDescending(x => x.VoidedAtUtc)) { <li><a asp-page="/Battles/Battle" asp-route-id="@voided.Id">Battle #@voided.Id</a>：@voided.VoidReason（@(voided.VoidedAtUtc?.ToLocalTime().ToString("g") ?? "時間未知")，@(voided.VoidedByUser?.DisplayName ?? "操作者未知")）</li> }</ul></section>
+    <section class="card card-body mb-3"><h2 class="h5">已撤銷 Battle 紀錄</h2><ul class="mb-0">@foreach (var voided in match.VoidedBattles.OrderByDescending(x => x.VoidedAtUtc)) { <li><a asp-page="/Battles/Battle" asp-route-id="@voided.Id">Battle #@voided.Id</a>：@voided.VoidReason（@if (voided.VoidedAtUtc is DateTime voidedAt) { <time datetime="@voidedAt.ToString("O")" data-local-datetime>@voidedAt.ToString("yyyy/MM/dd HH:mm") UTC</time> } else { <span>時間未知</span> }，@(voided.VoidedByUser?.DisplayName ?? "操作者未知")）</li> }</ul></section>
 }
 
 @if (match.Status == TournamentMatchStatus.AwaitingParticipationConfirmation)
@@ -81,9 +81,17 @@
     {
         <p>各位置不得重複。提交後不能更換，雙方所有必要資料完成前只會顯示自己的選擇。</p>
         <form method="post" asp-page-handler="SubmitLineup">
+        @if (Model.Workspace.RecentLineup.Count == match.Tournament.BeybladesPerPlayer)
+        { <div class="mb-3"><button type="button" class="btn btn-outline-primary" data-apply-recent-lineup>套用最近陣容</button><small class="d-block text-muted mt-1" data-recent-lineup-status aria-live="polite">帶入最近一次相同數量的陀螺與固定版本。</small></div> }
+        <div asp-validation-summary="All" class="text-danger" role="alert"></div>
         @for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++)
-        { <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(i + 1, Model.Workspace.AvailableBeyblades)" /> }
-        <button class="btn btn-primary">密封提交陣容</button></form>
+        {
+            var selectedBladeId = i < Model.BladeIds.Count ? Model.BladeIds[i] : (int?)null;
+            var selectedConfigurationId = i < Model.ConfigurationIds.Count ? Model.ConfigurationIds[i] : (int?)null;
+            var recent = i < Model.Workspace.RecentLineup.Count ? Model.Workspace.RecentLineup[i] : null;
+            <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(i + 1, Model.Workspace.AvailableBeyblades, selectedBladeId, selectedConfigurationId, recent?.BeybladeId, recent?.ConfigurationId)" />
+        }
+        <button class="btn btn-primary" data-lineup-submit>密封提交陣容</button></form>
     }
     else { <p class="mb-0">等待雙方提交陣容。</p> }
     </section>
