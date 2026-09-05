@@ -8,6 +8,7 @@ Compose 包含 PostgreSQL、一次性 EF migration service 與 ASP.NET Core Web 
 - PostgreSQL port：僅綁定 localhost，預設 5432
 - database volume：beybladexrank-postgres-data
 - Data Protection keys：主機 `data/keys/` → `/app/data/keys`
+- application image：`app` 與 `migrate` 共用 `APP_IMAGE`，預設 `beybladexrank-app`
 - restart policy：unless-stopped
 
 PostgreSQL 資料與登入金鑰必須在 container restart／recreate 後保留。具名 volume 不是備份，正式資料環境不得使用 `docker compose down -v`。
@@ -20,7 +21,7 @@ Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-`db` healthcheck 通過後，`migrate` service 套用 EF Core migration、冪等匯入零件目錄並成功結束，才啟動 `app`。Web Application 本身不在啟動時修改 schema。若從舊 SQLite 搬移，先用 DataMigration 工具完成空目標匯入，再執行 migrate service，避免零件預先匯入使目標不再為空。正式交付前必須確認：
+`app` 與 `migrate` 必須使用同一個 build 產出的 `APP_IMAGE`，避免只重建 Web 後由舊版 migration service 誤判 schema 已是最新。`db` healthcheck 通過後，`migrate` service 套用 EF Core migration、冪等匯入零件目錄並成功結束，才啟動 `app`。Web Application 本身不在啟動時修改 schema。若從舊 SQLite 搬移，先用 DataMigration 工具完成空目標匯入，再執行 migrate service，避免零件預先匯入使目標不再為空。正式交付前必須確認：
 
 1. image build 成功。
 2. migration 完成且應用可在 localhost:8080 回應。
