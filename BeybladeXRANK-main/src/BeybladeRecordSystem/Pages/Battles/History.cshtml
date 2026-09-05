@@ -47,7 +47,7 @@
         </ul>
         @foreach (var revision in round.Revisions.OrderByDescending(x => x.ChangedAtUtc))
         {
-            <div class="revision-note"><strong>判決修改</strong><span>@revision.Reason</span><small>@revision.ChangedAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm") · @revision.ChangedByUser.DisplayName</small></div>
+            <div class="revision-note"><strong>判決修改</strong><span>@revision.Reason</span><small><time datetime="@revision.ChangedAtUtc.ToString("O")" data-local-datetime>@revision.ChangedAtUtc.ToString("yyyy/MM/dd HH:mm") UTC</time> · @revision.ChangedByUser.DisplayName</small></div>
         }
     </section>
 }

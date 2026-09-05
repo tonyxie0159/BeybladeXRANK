@@ -35,6 +35,7 @@ public class DetailsModel(BattleService battleService) : PageModel
         _ => "尚未記錄"
     };
     public int? TournamentId => SourceMatch?.TournamentId;
+    public IReadOnlyList<BattleBeybladePerformance> MyBeybladePerformance { get; private set; } = [];
 
     public async Task<IActionResult> OnGetAsync(int id)
     {
@@ -43,7 +44,10 @@ public class DetailsModel(BattleService battleService) : PageModel
         Battle = result.Value!;
 
         if (Battle.Status is BattleStatus.Completed or BattleStatus.Forfeited)
+        {
+            MyBeybladePerformance = BuildBeybladePerformance(Battle, User.GetRequiredUserId());
             return Page();
+        }
 
         if (Battle.SourceType != BattleSourceType.Quick && SourceMatch is not null)
             return RedirectToPage("/Tournaments/Match", new { id = SourceMatch.Id });
@@ -56,4 +60,52 @@ public class DetailsModel(BattleService battleService) : PageModel
             _ => RedirectToPage("Battle", new { id })
         };
     }
+
+    private static IReadOnlyList<BattleBeybladePerformance> BuildBeybladePerformance(Battle battle, int userId)
+    {
+        var lineups = battle.Lineups.ToDictionary(x => x.Id);
+        return battle.Rounds
+            .Where(x => x.Status == BattleRoundStatus.Completed && (x.PlayerAId == userId || x.PlayerBId == userId))
+            .Select(round =>
+            {
+                var isPlayerA = round.PlayerAId == userId;
+                lineups.TryGetValue(round.LineupId, out var lineup);
+                return new
+                {
+                    Round = round,
+                    BeybladeId = isPlayerA ? round.PlayerABeybladeId : round.PlayerBBeybladeId,
+                    ConfigurationId = isPlayerA ? lineup?.PlayerAConfigurationId : lineup?.PlayerBConfigurationId,
+                    Name = isPlayerA ? round.PlayerABeybladeNameSnapshot : round.PlayerBBeybladeNameSnapshot
+                };
+            })
+            .GroupBy(x => new { x.BeybladeId, x.ConfigurationId, x.Name })
+            .Select(group =>
+            {
+                var events = group.SelectMany(x => x.Round.Events).Where(x => x.IsEffective).ToList();
+                var results = events.Where(x =>
+                    x.EventType == BattleRoundEventType.BattleResult && x.WinnerPlayerId.HasValue).ToList();
+                return new BattleBeybladePerformance(
+                    group.Key.BeybladeId,
+                    group.Key.ConfigurationId,
+                    group.Key.Name,
+                    group.Count(),
+                    results.Count(x => x.WinnerPlayerId == userId),
+                    results.Count(x => x.WinnerPlayerId != userId),
+                    events.Where(x => x.WinnerPlayerId == userId).Sum(x => x.ScoreAwarded),
+                    events.Where(x => x.WinnerPlayerId.HasValue && x.WinnerPlayerId != userId).Sum(x => x.ScoreAwarded));
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Name)
+            .ToList();
+    }
+
+    public sealed record BattleBeybladePerformance(
+        int BeybladeId,
+        int? ConfigurationId,
+        string Name,
+        int RoundCount,
+        int Wins,
+        int Losses,
+        int Score,
+        int AgainstScore);
 }

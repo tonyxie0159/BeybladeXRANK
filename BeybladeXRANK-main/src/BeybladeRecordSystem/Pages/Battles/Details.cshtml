@@ -31,6 +31,31 @@
     </div>
 </section>
 
+@if (Model.MyBeybladePerformance.Count > 0)
+{
+    <section class="card card-body mb-3" aria-labelledby="battle-configuration-performance">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+                <h2 id="battle-configuration-performance" class="h5 mb-1">本場配置表現</h2>
+                <p class="text-muted mb-0">立即確認每個出戰版本在本場的得失分，再進入累計版本戰績比較。</p>
+            </div>
+            <a asp-page="/Statistics/Index" asp-route-view="blades" class="btn btn-outline-secondary btn-sm">全部陀螺戰績</a>
+        </div>
+        <div class="list-group list-group-flush">
+            @foreach (var item in Model.MyBeybladePerformance)
+            {
+                <a asp-page="/Statistics/Beyblade"
+                   asp-route-id="@item.BeybladeId"
+                   asp-fragment="@(item.ConfigurationId is int configurationId ? $"version-{configurationId}" : "versions")"
+                   class="list-group-item list-group-item-action px-0 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+                    <span><strong>@item.Name</strong><small class="d-block text-muted">@item.RoundCount 局 · @item.Wins 勝 / @item.Losses 敗</small></span>
+                    <span class="text-nowrap"><strong>得 @item.Score</strong> · 失 @item.AgainstScore <span aria-hidden="true">→</span></span>
+                </a>
+            }
+        </div>
+    </section>
+}
+
 <div class="page-actions">
     <a asp-page="/Index" class="btn btn-primary">回到首頁</a>
     <a asp-page="History" asp-route-id="@Model.Battle.Id" class="btn btn-outline-secondary">查看對戰紀錄</a>

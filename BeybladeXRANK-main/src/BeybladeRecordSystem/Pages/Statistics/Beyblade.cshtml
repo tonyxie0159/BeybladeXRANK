@@ -18,12 +18,12 @@
     <p class="fs-5 mb-0">@total.Wins 勝 / @total.Losses 敗 · 勝率 @total.WinRate.ToString("P0")</p>
     <p class="text-muted mb-0">得分 @total.Score · 失分 @total.AgainstScore · @total.RoundCount 個小局</p>
 </section>
-<h2 class="h4">版本明細</h2>
+<h2 id="versions" class="h4">版本明細</h2>
 @if (Model.Details.Versions.Count == 0) { <p class="text-muted">尚無配置版本或對戰紀錄。</p> }
 @foreach (var row in Model.Details.Versions)
 {
     var stats = row.Summary;
-    <section class="card card-body mb-3">
+    <section id="@(row.ConfigurationId is int configurationId ? $"version-{configurationId}" : "version-unknown")" class="card card-body mb-3 scroll-target">
         <h3 class="h5">@row.Label</h3><p class="small text-muted">@row.Parts</p>
         <div class="row g-3">
             <div class="col-sm-6">@stats.Wins 勝 / @stats.Losses 敗 · 勝率 @stats.WinRate.ToString("P0")<br />得分 @stats.Score · 失分 @stats.AgainstScore · 差分 @stats.ScoreDifference</div>

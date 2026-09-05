@@ -25,10 +25,18 @@ public class SetupModel(QuickBattleFlowService flowService, BattleService battle
         return Page();
     }
 
-    public async Task<IActionResult> OnPostSubmitLineupAsync(int id) =>
-        RedirectWith(ModelState.IsValid
+    public async Task<IActionResult> OnPostSubmitLineupAsync(int id)
+    {
+        var result = ModelState.IsValid
             ? await flowService.SubmitLineupAsync(id, User.GetRequiredUserId(), BladeIds, ConfigurationIds)
-            : ServiceResult.Failure("請選擇有效的陀螺與版本。"), id, "陣容已密封提交。");
+            : ServiceResult.Failure("請選擇有效的陀螺與版本。");
+        if (result.Succeeded)
+            return RedirectWith(result, id, "陣容已密封提交。");
+
+        if (!await LoadAsync(id)) return NotFound();
+        ModelState.AddModelError(string.Empty, result.Error ?? "無法提交陣容。");
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostConfirmAsync(int id) =>
         RedirectWith(await flowService.ConfirmLineupAsync(id, User.GetRequiredUserId()), id, "已確認本版陣容。");
@@ -45,7 +53,10 @@ public class SetupModel(QuickBattleFlowService flowService, BattleService battle
 
     public async Task<IActionResult> OnPostStartAsync(int id)
     {
-        var result = await battleService.StartBattleAsync(id, User.GetRequiredUserId());
+        if (!await LoadAsync(id)) return NotFound();
+        var result = Workspace.Battle.Status == BattleStatus.LineupLocked
+            ? await battleService.AssignSidesAndStartAsync(id, User.GetRequiredUserId(), SideA)
+            : await battleService.StartBattleAsync(id, User.GetRequiredUserId());
         if (result.Succeeded) return RedirectToPage("Battle", new { id });
         TempData["Error"] = result.Error;
         return RedirectToPage(new { id });

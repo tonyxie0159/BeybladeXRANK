@@ -43,6 +43,6 @@
         blade.addEventListener('change', () => { versionSearch.value = ''; filterVersions(true); });
         versionSearch.addEventListener('input', () => filterVersions(false));
         version.addEventListener('change', summary);
-        filterVersions(true);
+        filterVersions(false);
     });
 })();

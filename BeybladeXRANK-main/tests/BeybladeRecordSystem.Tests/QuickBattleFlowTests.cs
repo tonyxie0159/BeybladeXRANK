@@ -325,6 +325,40 @@ public class QuickBattleFlowTests
     }
 
     [Fact]
+    public async Task AssignSidesAndStart_StartsQuickBattleAtomicallyAndPreservesOwnership()
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+        var battleId = await fixture.CreateBattleInReviewAsync();
+        Assert.True((await fixture.Flow.ConfirmLineupAsync(battleId, fixture.PlayerA.Id)).Succeeded);
+        Assert.True((await fixture.Flow.ConfirmLineupAsync(battleId, fixture.PlayerB.Id)).Succeeded);
+
+        Assert.False((await fixture.Battles.AssignSidesAndStartAsync(
+            battleId, fixture.PlayerB.Id, BattleSide.X)).Succeeded);
+        var stillLocked = await fixture.Db.Battles.Include(x => x.Rounds).SingleAsync(x => x.Id == battleId);
+        Assert.Equal(BattleStatus.LineupLocked, stillLocked.Status);
+        Assert.Null(stillLocked.SideADesignation);
+        Assert.Empty(stillLocked.Rounds);
+
+        fixture.Publisher.Events.Clear();
+        var startedResult = await fixture.Battles.AssignSidesAndStartAsync(
+            battleId, fixture.PlayerA.Id, BattleSide.X);
+
+        Assert.True(startedResult.Succeeded);
+        fixture.Db.ChangeTracker.Clear();
+        var started = await fixture.Db.Battles.Include(x => x.Rounds).SingleAsync(x => x.Id == battleId);
+        Assert.Equal(BattleStatus.InProgress, started.Status);
+        Assert.Equal(BattleSide.X, started.SideADesignation);
+        Assert.NotNull(started.StartedAtUtc);
+        Assert.Single(started.Rounds);
+
+        var events = fixture.Publisher.Events.Where(x => x.EventType == "battle-state").ToList();
+        Assert.Equal(2, events.Count);
+        Assert.All(events, item => Assert.Equal(
+            $"/Battles/Battle/{battleId}",
+            item.Payload.GetType().GetProperty("targetUrl")!.GetValue(item.Payload)));
+    }
+
+    [Fact]
     public async Task Reorder_IsPrivatePerPlayerAndAppliesOnlyAfterBothSubmit()
     {
         await using var fixture = await QuickBattleFixture.CreateAsync();

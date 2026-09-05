@@ -15,6 +15,7 @@
 }
 
 html { font-size: 16px; min-height: 100%; scroll-behavior: smooth; }
+.scroll-target { scroll-margin-top: 1rem; }
 body { min-height: 100vh; margin: 0; background: radial-gradient(circle at 85% -10%, rgba(239, 35, 60, .08), transparent 30rem), var(--ink); color: var(--text); font-family: Inter, "Noto Sans TC", "Segoe UI", sans-serif; }
 a { color: #8bd8ff; text-underline-offset: .18em; }
 a:hover { color: #c2ecff; }
@@ -268,7 +269,7 @@ details > summary { cursor: pointer; }
   .mobile-dock span { color: var(--electric); font-size: 1.25rem; line-height: 1; }.mobile-dock small { font-size: .7rem; font-weight: 700; }
   .page-header { align-items: stretch; flex-direction: column; }.page-actions { display: grid; grid-template-columns: repeat(2, 1fr); }.page-actions .btn { width: 100%; }
   .hero { min-height: auto; grid-template-columns: 1fr; gap: 1rem; padding-top: 4.5rem; text-align: center; }
-  .hero-copy { display: flex; flex-direction: column; align-items: center; }.hero-visual { width: min(100%, 430px); margin: -1rem auto 0; order: -1; }.hero-features { justify-content: center; }
+  .hero-copy { display: flex; flex-direction: column; align-items: center; }.hero-visual { width: min(100%, 430px); margin: 1rem auto 0; }.hero-features { justify-content: center; }
   .home-shell { padding-top: 2rem; }.welcome-panel { grid-template-columns: 1fr; padding: 2rem; }.arena-graphic { display: none; }
   .action-grid { grid-template-columns: 1fr; }.action-card { min-height: 120px; }
   .statistics-page { gap: 1rem; }

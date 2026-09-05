@@ -31,6 +31,69 @@ public sealed partial class AccountWebTests : IClassFixture<AccountWebApplicatio
     }
 
     [Fact]
+    public async Task QuickLineupValidationFailure_PreservesEverySubmittedBladeAndVersion()
+    {
+        using var firstClient = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        using var secondClient = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        var suffix = Guid.NewGuid().ToString("N");
+        const string password = "lineup preservation password";
+        var firstAccount = $"lineup-first-{suffix}";
+        var secondAccount = $"lineup-second-{suffix}";
+        await RegisterAsync(firstClient, firstAccount, password, $"保留甲-{suffix[..6]}");
+        await RegisterAsync(secondClient, secondAccount, password, $"保留乙-{suffix[..6]}");
+        await LoginAsync(firstClient, firstAccount, password);
+
+        int battleId;
+        List<int> bladeIds;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var flow = scope.ServiceProvider.GetRequiredService<QuickBattleFlowService>();
+            var first = await db.Users.SingleAsync(x => x.NormalizedAccount == firstAccount.ToUpperInvariant());
+            var second = await db.Users.SingleAsync(x => x.NormalizedAccount == secondAccount.ToUpperInvariant());
+            var now = DateTime.UtcNow;
+            var blades = Enumerable.Range(1, 3).Select(index => new Beyblade
+            {
+                UserId = first.Id,
+                Name = $"保留選擇-{suffix[..6]}-{index}",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            }).ToList();
+            db.Beyblades.AddRange(blades);
+            await db.SaveChangesAsync();
+            bladeIds = blades.Select(x => x.Id).ToList();
+            var invitation = (await flow.SendInvitationAsync(first.Id, second.Id)).Value!;
+            battleId = (await flow.AcceptInvitationAsync(invitation.Id, second.Id)).Value;
+        }
+
+        var setupPath = $"/Battles/Setup/{battleId}";
+        var token = await GetAntiforgeryTokenAsync(firstClient, setupPath);
+        using var response = await firstClient.PostAsync($"{setupPath}?handler=SubmitLineup", Form(
+            ("__RequestVerificationToken", token),
+            ("BladeIds", bladeIds[0].ToString()),
+            ("BladeIds", bladeIds[1].ToString()),
+            ("BladeIds", bladeIds[0].ToString()),
+            ("ConfigurationIds", "0"),
+            ("ConfigurationIds", "0"),
+            ("ConfigurationIds", "0")));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
+        Assert.Contains("必須依序選擇三顆不同的陀螺", html, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(html, $"value=\"{bladeIds[0]}\" selected").Count);
+        Assert.Single(Regex.Matches(html, $"value=\"{bladeIds[1]}\" selected").Cast<Match>());
+        Assert.Equal(3, Regex.Matches(html, "value=\"0\"[^>]*selected").Count);
+    }
+
+    [Fact]
     public async Task AccountLifecycle_UsesAntiforgeryAndPreservesUserOwnership()
     {
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -349,6 +412,12 @@ public sealed partial class AccountWebTests : IClassFixture<AccountWebApplicatio
         Assert.Contains("勝利玩家", resultHtml, StringComparison.Ordinal);
         Assert.Contains(firstDisplayName, resultHtml, StringComparison.Ordinal);
         Assert.Contains("最終比分", resultHtml, StringComparison.Ordinal);
+        Assert.Contains("本場配置表現", resultHtml, StringComparison.Ordinal);
+        Assert.Contains("1 局", resultHtml, StringComparison.Ordinal);
+        Assert.Contains("1 勝 / 0 敗", resultHtml, StringComparison.Ordinal);
+        Assert.Contains("得 3", resultHtml, StringComparison.Ordinal);
+        Assert.Contains("得 1", resultHtml, StringComparison.Ordinal);
+        Assert.Contains("/Statistics/Beyblade/", resultHtml, StringComparison.Ordinal);
         Assert.Contains("回到首頁", resultHtml, StringComparison.Ordinal);
     }
 

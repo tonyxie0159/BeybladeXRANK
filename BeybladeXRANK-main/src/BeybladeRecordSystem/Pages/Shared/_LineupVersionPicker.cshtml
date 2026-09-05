@@ -6,7 +6,7 @@
         <select id="blade-@Model.Position" name="BladeIds" class="form-select" data-blade required>
             <option value="">請選擇陀螺</option>
             @foreach (var blade in Model.Beyblades)
-            { <option value="@blade.Id">@blade.Name · @(blade.UpperName ?? "未登錄零件")</option> }
+            { <option value="@blade.Id" selected="@(blade.Id == Model.SelectedBeybladeId)">@blade.Name · @(blade.UpperName ?? "未登錄零件")</option> }
         </select>
     </div>
     <div class="col-md-6">
@@ -17,9 +17,9 @@
             @foreach (var blade in Model.Beyblades)
             {
                 if (blade.Configurations.Count == 0)
-                { <option value="0" data-blade-id="@blade.Id" data-summary="此舊陀螺尚未登錄版本">@blade.Name · 未記錄版本</option> }
+                { <option value="0" data-blade-id="@blade.Id" data-summary="此舊陀螺尚未登錄版本" selected="@(blade.Id == Model.SelectedBeybladeId && Model.SelectedConfigurationId == 0)">@blade.Name · 未記錄版本</option> }
                 foreach (var version in blade.Configurations.OrderByDescending(x => x.VersionNo))
-                { <option value="@version.Id" data-blade-id="@blade.Id" data-summary="@version.PartsSummary">@version.VersionLabel</option> }
+                { <option value="@version.Id" data-blade-id="@blade.Id" data-summary="@version.PartsSummary" selected="@(version.Id == Model.SelectedConfigurationId)">@version.VersionLabel</option> }
             }
         </select>
     </div>
