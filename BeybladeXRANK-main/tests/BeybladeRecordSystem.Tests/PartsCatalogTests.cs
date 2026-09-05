@@ -310,24 +310,32 @@ public class PartsCatalogTests
                 } });
         }
         AddRound(v1, true, true, 1, BattleSourceType.Quick);
+        AddRound(v1, true, true, 1, BattleSourceType.Quick);
+        AddRound(v1, true, true, 1, BattleSourceType.Quick);
+        AddRound(v1, true, true, 1, BattleSourceType.Quick);
+        AddRound(v1, true, true, 1, BattleSourceType.Quick);
         AddRound(v2, false, false, 2, BattleSourceType.Quick);
         AddRound(null, true, true, 3, BattleSourceType.Quick);
         await fixture.Db.SaveChangesAsync();
         fixture.Db.ChangeTracker.Clear();
         var stats = new StatisticsService(fixture.Db);
         var detail = (await stats.GetBeybladeVersionStatisticsAsync(fixture.Owner.Id, fixture.Blade.Id))!;
-        Assert.Equal((2, 1, 4, 2, 3), (detail.Total.Wins, detail.Total.Losses, detail.Total.Score, detail.Total.AgainstScore, detail.Total.RoundCount));
+        Assert.Equal((6, 1, 8, 2, 7), (detail.Total.Wins, detail.Total.Losses, detail.Total.Score, detail.Total.AgainstScore, detail.Total.RoundCount));
         Assert.Equal(3, detail.Versions.Count);
         Assert.Equal(detail.Total.Score, detail.Versions.Sum(x => x.Summary.Score));
         Assert.Equal(detail.Total.Wins, detail.Versions.Sum(x => x.Summary.Wins));
-        Assert.Equal(1, detail.Versions.Single(x => x.ConfigurationId == v1).Summary.Wins);
-        Assert.Equal(1, detail.Versions.Single(x => x.ConfigurationId == v2).Summary.Losses);
+        var firstVersion = detail.Versions.Single(x => x.ConfigurationId == v1);
+        var secondVersion = detail.Versions.Single(x => x.ConfigurationId == v2);
+        Assert.Equal(5, firstVersion.Summary.Wins);
+        Assert.Contains(firstVersion.Insights, x => x.Tone == "success" && x.Text.Contains("勝率"));
+        Assert.Equal(1, secondVersion.Summary.Losses);
+        Assert.Contains(secondVersion.Insights, x => x.Tone == "info" && x.Text.Contains("再累積 4 局"));
         Assert.Equal(3, detail.Versions.Single(x => x.ConfigurationId == null).Summary.Score);
         Assert.Equal(1, (await stats.GetBeybladeVersionStatisticsAsync(fixture.Owner.Id, fixture.Blade.Id,
             StatisticsSourceFilter.Quick, StatisticsSideFilter.X))!.Total.Losses);
         Assert.Equal(0, (await stats.GetBeybladeVersionStatisticsAsync(fixture.Owner.Id, fixture.Blade.Id,
             StatisticsSourceFilter.TournamentIndividual))!.Total.RoundCount);
-        Assert.Equal(2, (await stats.GetBeybladeVersionStatisticsAsync(fixture.Owner.Id, fixture.Blade.Id,
+        Assert.Equal(6, (await stats.GetBeybladeVersionStatisticsAsync(fixture.Owner.Id, fixture.Blade.Id,
             StatisticsSourceFilter.Quick, StatisticsSideFilter.B))!.Total.Wins);
         Assert.Null(await stats.GetBeybladeVersionStatisticsAsync(fixture.Other.Id, fixture.Blade.Id));
         Assert.Equal(3, (await stats.GetOpponentBeybladeStatisticsAsync(fixture.Owner.Id, fixture.Other.Id)).Count);

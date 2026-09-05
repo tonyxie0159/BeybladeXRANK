@@ -229,6 +229,12 @@ details > summary { cursor: pointer; }
 .statistics-metrics div { min-width: 0; }
 .statistics-metrics dt { color: var(--muted); font-size: .7rem; font-weight: 700; }
 .statistics-metrics dd { margin: .15rem 0 0; color: var(--text); font-weight: 800; overflow-wrap: anywhere; }
+.lineup-picker-conflict { border-inline-start: .2rem solid var(--warning, #ffc107); padding-inline-start: .75rem; }
+.version-insights { display: grid; gap: .5rem; margin: 1rem 0 0; }
+.version-insight { border-radius: .5rem; padding: .6rem .75rem; background: rgba(255, 255, 255, .05); }
+.version-insight-success { border-inline-start: .2rem solid var(--success, #38b27a); }
+.version-insight-warning { border-inline-start: .2rem solid var(--warning, #ffc107); }
+.version-insight-info { border-inline-start: .2rem solid var(--info, #62a8ff); }
 .statistics-metrics-primary { padding-bottom: .9rem; }
 .statistics-details summary { min-height: 44px; display: flex; align-items: center; color: #8bd8ff; font-weight: 700; cursor: pointer; }
 .statistics-details[open] summary { margin-bottom: .65rem; }

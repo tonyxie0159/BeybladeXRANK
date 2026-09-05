@@ -538,6 +538,19 @@ public class QuickBattleFlowTests
             fixture.PlayerA.Id,
             fixture.PlayerABladeIds,
             [first, distinct, third])).Succeeded);
+
+        var completed = await fixture.Db.Battles.SingleAsync(x => x.Id == acceptedBattleId);
+        completed.Status = BattleStatus.Completed;
+        completed.CompletedAtUtc = DateTime.UtcNow;
+        await fixture.Db.SaveChangesAsync();
+        var nextBattleId = await fixture.CreateAcceptedBattleAsync();
+
+        var workspace = await fixture.Flow.GetWorkspaceAsync(nextBattleId, fixture.PlayerA.Id);
+
+        Assert.Equal(
+            new[] { (fixture.PlayerABladeIds[0], first), (fixture.PlayerABladeIds[1], distinct), (fixture.PlayerABladeIds[2], third) },
+            workspace!.RecentLineup.Select(x => (x.BeybladeId, x.ConfigurationId)));
+        Assert.Empty((await fixture.Flow.GetWorkspaceAsync(nextBattleId, fixture.PlayerB.Id))!.RecentLineup);
     }
 
     private sealed class QuickBattleFixture : IAsyncDisposable

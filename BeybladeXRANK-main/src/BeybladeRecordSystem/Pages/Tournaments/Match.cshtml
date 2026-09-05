@@ -81,14 +81,17 @@
     {
         <p>各位置不得重複。提交後不能更換，雙方所有必要資料完成前只會顯示自己的選擇。</p>
         <form method="post" asp-page-handler="SubmitLineup">
+        @if (Model.Workspace.RecentLineup.Count == match.Tournament.BeybladesPerPlayer)
+        { <div class="mb-3"><button type="button" class="btn btn-outline-primary" data-apply-recent-lineup>套用最近陣容</button><small class="d-block text-muted mt-1" data-recent-lineup-status aria-live="polite">帶入最近一次相同數量的陀螺與固定版本。</small></div> }
         <div asp-validation-summary="All" class="text-danger" role="alert"></div>
         @for (var i = 0; i < match.Tournament.BeybladesPerPlayer; i++)
         {
             var selectedBladeId = i < Model.BladeIds.Count ? Model.BladeIds[i] : (int?)null;
             var selectedConfigurationId = i < Model.ConfigurationIds.Count ? Model.ConfigurationIds[i] : (int?)null;
-            <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(i + 1, Model.Workspace.AvailableBeyblades, selectedBladeId, selectedConfigurationId)" />
+            var recent = i < Model.Workspace.RecentLineup.Count ? Model.Workspace.RecentLineup[i] : null;
+            <partial name="_LineupVersionPicker" model="new BeybladeRecordSystem.Pages.Beyblades.LineupVersionPickerModel(i + 1, Model.Workspace.AvailableBeyblades, selectedBladeId, selectedConfigurationId, recent?.BeybladeId, recent?.ConfigurationId)" />
         }
-        <button class="btn btn-primary">密封提交陣容</button></form>
+        <button class="btn btn-primary" data-lineup-submit>密封提交陣容</button></form>
     }
     else { <p class="mb-0">等待雙方提交陣容。</p> }
     </section>

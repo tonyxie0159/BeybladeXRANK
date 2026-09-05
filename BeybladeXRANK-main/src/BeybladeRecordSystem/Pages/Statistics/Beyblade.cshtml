@@ -29,6 +29,12 @@
             <div class="col-sm-6">@stats.Wins 勝 / @stats.Losses 敗 · 勝率 @stats.WinRate.ToString("P0")<br />得分 @stats.Score · 失分 @stats.AgainstScore · 差分 @stats.ScoreDifference</div>
             <div class="col-sm-6">@stats.RoundCount 個小局 · 每局得分 @stats.AverageScore / 失分 @stats.AverageAgainstScore<br />發射失誤 @stats.LaunchFaultCount 次 · 失誤失分 @stats.LaunchFaultAgainstScore</div>
         </div>
+        <div class="version-insights" aria-label="版本優缺點摘要">
+            @foreach (var insight in row.Insights)
+            {
+                <div class="version-insight version-insight-@insight.Tone">@insight.Text</div>
+            }
+        </div>
         <details class="mt-3"><summary>站位與勝利方式</summary>
             <p>B Side：@stats.BSide.Wins 勝 / @stats.BSide.Losses 敗 · X Side：@stats.XSide.Wins 勝 / @stats.XSide.Losses 敗</p>
             <p class="mb-0">勝／敗次數：轉停 @stats.ResultTypes.SpinFinishFor / @stats.ResultTypes.SpinFinishAgainst；

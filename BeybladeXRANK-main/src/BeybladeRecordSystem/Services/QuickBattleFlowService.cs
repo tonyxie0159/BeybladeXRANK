@@ -26,6 +26,7 @@ public record QuickBattleWorkspace(
     IReadOnlyList<BattleLineupSelection> VisibleSelections,
     IReadOnlyList<BattleLineupSelection> CurrentPrivateSelections,
     IReadOnlyList<Beyblade> AvailableBeyblades,
+    IReadOnlyList<LineupPresetItem> RecentLineup,
     bool CurrentUserSubmitted,
     bool CurrentUserConfirmed,
     bool CurrentUserEditRequestUsed);
@@ -275,11 +276,15 @@ public class QuickBattleFlowService(
         var available = battle.Status == BattleStatus.LineupSelection
             ? await db.Beyblades.AsNoTracking().WithConfiguration().Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync()
             : [];
+        var recentLineup = available.Count == 0 || currentSelections.Any(x => x.UserId == userId)
+            ? []
+            : await LineupPreset.GetMostRecentValidAsync(db, userId, 3, available);
         return new QuickBattleWorkspace(
             battle,
             visibleSelections,
             privateSelections,
             available,
+            recentLineup,
             currentSelections.Count(x => x.UserId == userId) == 3,
             IsConfirmed(battle, userId),
             IsEditRequestUsed(battle, userId));

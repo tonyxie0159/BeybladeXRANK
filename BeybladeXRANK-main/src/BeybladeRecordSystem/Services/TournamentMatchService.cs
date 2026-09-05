@@ -16,6 +16,7 @@ public record TournamentMatchWorkspace(
     IReadOnlyList<BattleLineupSelection> CurrentPrivateSelections,
     IReadOnlyList<BattleTeamOrderSelection> CurrentPrivateTeamOrder,
     IReadOnlyList<Beyblade> AvailableBeyblades,
+    IReadOnlyList<LineupPresetItem> RecentLineup,
     bool IsOrganizer)
 {
     public string PollToken => string.Join(':',
@@ -76,7 +77,12 @@ public class TournamentMatchService(AppDbContext db)
         var blades = participant is null
             ? []
             : await db.Beyblades.WithConfiguration().Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync();
-        return new TournamentMatchWorkspace(match, participant, visible, visibleTeamOrder, privateSelections, privateTeamOrder, blades, isOrganizer);
+        var recentLineup = participant is null || blades.Count == 0 ||
+            match.Status != TournamentMatchStatus.LineupSelection || privateSelections.Count > 0
+            ? []
+            : await LineupPreset.GetMostRecentValidAsync(
+                db, userId, match.Tournament.BeybladesPerPlayer, blades);
+        return new TournamentMatchWorkspace(match, participant, visible, visibleTeamOrder, privateSelections, privateTeamOrder, blades, recentLineup, isOrganizer);
     }
 
     public async Task<IReadOnlyList<TournamentMatchAction>> GetActionableAsync(int tournamentId, int userId)
