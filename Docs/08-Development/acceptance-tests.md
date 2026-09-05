@@ -11,7 +11,7 @@
 dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 ```
 
-結果：208 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
+結果：210 passed、0 failed、0 skipped。現有測試包含 Domain／Service／Persistence／PageModel、HTTP 與 SignalR 整合測試，仍不能代替兩支實機手機或實際部署驗收。
 
 零件功能證據：279 筆冪等匯入、完整組裝、一體式及 CX 結構、名稱快照與通用名稱、新增／補登交易、所有權與防偽、偽造通用名稱忽略；CX 上蓋命名相同時超越／輔助戰刃更換建立新版本，相同組合重用；快速／團體對戰選取指定版本並在重排保留；版本戰績加總、未記錄版本、來源／站位篩選與他人資料禁止存取。舊 SQLite 無 UpperName 仍可讀取。
 
@@ -132,6 +132,8 @@ dotnet test BeybladeXRANK-main/BeybladeRecordSystem.slnx
 2026-08-20 UI 本機瀏覽器證據：公開首頁、Login 與登入後首頁可正常載入；登入後主導覽的 Home、Battles Create／Invitations、Beyblades Index／Create、Tournaments Index／Create、Statistics Index、Account Settings、Privacy 共 10 條 GET 路徑均有正確標題、無頁面錯誤、無桌面版水平溢出，且瀏覽器 console 無 error／warning。Register POST 以獨立測試資料目錄及有效 anti-forgery token 驗證成功。手機 viewport 套用與 Logout POST 遭本機瀏覽器控制安全層阻擋，仍保留未驗收狀態。
 
 2026-08-21 UI 本機瀏覽器證據：公開首頁在 1280px 桌面及 390px 手機 viewport 均無水平溢出，手機導覽可展開；展開時 toggle 的可存取名稱由「開啟導覽選單」切換為「關閉導覽選單」，收合時恢復。新增 HTTP regression test 固定 layout 的雙狀態標籤及對應 Bootstrap collapse behavior script。
+
+2026-09-03 Statistics UI 本機瀏覽器證據：`test1` 於 Docker Production container 驗證 1280px 桌面分頁列，以及 390px 手機「總覽／我的陀螺／對手／歷史」下拉切換、個人來源篩選、對手來源切換與各檢視空狀態；全部檢視無整頁水平溢出，瀏覽器 console 無 error／warning。新增 HTTP regression test 固定目前檢視的 query string 正規化、只呈現所選檢視、手機摘要卡與來源選擇狀態；完整測試 170 passed。Docker image `beybladexrank-main-app:latest` 重建成功，container migration 為最新且 `http://localhost:8080/` 回應 200。
 
 - [ ] 快速邀請、私密提交、edit request、Side、計分、重排、Revision、棄權與取消以兩個帳號操作。
 - [ ] Tournament 個人、雙人六顆／四顆、三人 4／5 分制以多帳號完成至少一場。
