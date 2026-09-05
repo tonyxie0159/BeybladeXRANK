@@ -12,257 +12,26 @@ namespace BeybladeRecordSystem.Tests;
 public class TournamentPersistenceTests
 {
     [Fact]
-    public void CurrentModel_HasNoPendingMigrationChanges()
+    public void CurrentPostgreSqlModel_HasNoPendingMigrationChanges()
     {
-        using var context = new AppDbContext(
-            new DbContextOptionsBuilder<AppDbContext>().UseSqlite("Data Source=:memory:").Options);
+        using var context = CreatePostgreSqlContext();
 
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
     [Fact]
-    public async Task Migrations_CreateTournamentTablesAlongsideExistingBattleTables()
+    public void PostgreSqlInitialMigration_ContainsTheCompleteSchema()
     {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
+        using var context = CreatePostgreSqlContext();
+        var script = context.GetService<IMigrator>().GenerateScript();
 
-        await context.Database.MigrateAsync();
-
-        var tables = new HashSet<string>(StringComparer.Ordinal);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table'";
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            tables.Add(reader.GetString(0));
-        }
-
-        Assert.Contains("Battles", tables);
-        Assert.Contains("Tournaments", tables);
-        Assert.Contains("TournamentEntries", tables);
-        Assert.Contains("TournamentEntryMembers", tables);
-        Assert.Contains("TournamentInvitations", tables);
-        Assert.Contains("TournamentMatches", tables);
-        Assert.Contains("TournamentMatchParticipants", tables);
-        Assert.Contains("BattleLineupSelections", tables);
-        Assert.Contains("BattleTeamOrderSelections", tables);
-        Assert.Contains("QuickBattleInvitations", tables);
-    }
-
-    [Fact]
-    public async Task UniqueIdentityMigration_DisambiguatesLegacyCaseInsensitiveConflicts()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
-        var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260820033301_AddQuickBattleInvitationFlow");
-        await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 'Legacy', 'hash', 'Same Player', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, ' legacy ', 'hash', ' same player ', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (3, 'Third', 'hash', 'Unique Player', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            """);
-
-        await migrator.MigrateAsync();
-        context.ChangeTracker.Clear();
-
-        var users = await context.Users.OrderBy(x => x.Id).ToListAsync();
-        Assert.Equal("Legacy", users[0].Account);
-        Assert.Equal("Same Player", users[0].DisplayName);
-        Assert.Equal("legacy-2", users[1].Account);
-        Assert.Equal("same player #2", users[1].DisplayName);
-        Assert.Equal("Third", users[2].Account);
-        Assert.Equal("Unique Player", users[2].DisplayName);
-        Assert.Equal(users.Count, users.Select(x => x.NormalizedAccount).Distinct().Count());
-        Assert.Equal(users.Count, users.Select(x => x.NormalizedDisplayName).Distinct().Count());
-        Assert.All(users, user =>
-        {
-            Assert.Equal(user.Account.Trim().ToUpperInvariant(), user.NormalizedAccount);
-            Assert.Equal(user.DisplayName.Trim().ToUpperInvariant(), user.NormalizedDisplayName);
-        });
-    }
-
-    [Fact]
-    public async Task IdentityRepairMigration_ReconcilesAlreadyDeployedInconsistentNormalizedValues()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
-        var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260822164904_AddRealtimeNotificationsAndUniqueIdentity");
-        await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO Users (Id, Account, NormalizedAccount, PasswordHash, DisplayName, NormalizedDisplayName, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 'Legacy', 'LEGACY-2', 'hash', 'Same Player', 'SAME PLAYER #2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, ' legacy ', 'LEGACY', 'hash', ' same player ', 'SAME PLAYER', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            """);
-
-        await migrator.MigrateAsync();
-        context.ChangeTracker.Clear();
-
-        var users = await context.Users.OrderBy(x => x.Id).ToListAsync();
-        Assert.Equal("Legacy", users[0].Account);
-        Assert.Equal("Same Player", users[0].DisplayName);
-        Assert.Equal("legacy-2", users[1].Account);
-        Assert.Equal("same player #2", users[1].DisplayName);
-        Assert.Equal("LEGACY-2", users[1].NormalizedAccount);
-        Assert.Equal("SAME PLAYER #2", users[1].NormalizedDisplayName);
-    }
-
-    [Fact]
-    public async Task BattleGeneralizationMigration_PreservesScoresAndBackfillsPlayerSnapshots()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
-        var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260808152245_InitialCreate");
-
-        await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 'a', 'hash', 'Player A', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 'b', 'hash', 'Player B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Beyblades (Id, UserId, Name, IsDeleted, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 1, 'Blade A', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 2, 'Blade B', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Battles (Id, PlayerAId, PlayerBId, CreatedByUserId, Status, PlayerAScore, PlayerBScore, WinningPlayerId, CreatedAtUtc, Version)
-            VALUES (1, 1, 2, 1, 2, 3, 2, NULL, CURRENT_TIMESTAMP, X'01');
-            INSERT INTO BattleLineups (Id, BattleId, SequenceNo, PositionNo, PlayerABeybladeId, PlayerABeybladeNameSnapshot, PlayerBBeybladeId, PlayerBBeybladeNameSnapshot, IsCurrent)
-            VALUES (1, 1, 1, 1, 1, 'Blade A', 2, 'Blade B', 1);
-            INSERT INTO BattleRounds (Id, BattleId, LineupId, RoundNo, PositionNo, PlayerABeybladeId, PlayerABeybladeNameSnapshot, PlayerBBeybladeId, PlayerBBeybladeNameSnapshot, Status, CreatedAtUtc)
-            VALUES (1, 1, 1, 1, 1, 1, 'Blade A', 2, 'Blade B', 0, CURRENT_TIMESTAMP);
-            """);
-
-        await migrator.MigrateAsync();
-        context.ChangeTracker.Clear();
-
-        var battle = await context.Battles.SingleAsync();
-        var lineup = await context.BattleLineups.SingleAsync();
-        var round = await context.BattleRounds.SingleAsync();
-        Assert.Equal(3, battle.SideAScore);
-        Assert.Equal(2, battle.SideBScore);
-        Assert.Equal(4, battle.ScoreToWin);
-        Assert.Equal(BattleSourceType.Quick, battle.SourceType);
-        Assert.Equal(1, lineup.PlayerAId);
-        Assert.Equal("Player A", lineup.PlayerADisplayNameSnapshot);
-        Assert.Equal(2, lineup.PlayerBId);
-        Assert.Equal("Player B", lineup.PlayerBDisplayNameSnapshot);
-        Assert.Equal(1, round.PlayerAId);
-        Assert.Equal("Player A", round.PlayerADisplayNameSnapshot);
-        Assert.Equal(2, round.PlayerBId);
-        Assert.Equal("Player B", round.PlayerBDisplayNameSnapshot);
-    }
-
-    [Fact]
-    public async Task LineupSequenceMigration_BackfillsExistingPrivateSubmissionsAsSequenceOne()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
-        var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260819165152_AddTeamMatchLineupFlow");
-        await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 'organizer-seq', 'hash', 'Organizer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 'player-seq', 'hash', 'Player', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Beyblades (Id, UserId, Name, IsDeleted, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 2, 'Existing Blade', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Tournaments (Id, Name, Mode, Format, RegistrationMode, RuleSet, Status, RegistrationStage, TeamSize, BeybladesPerPlayer, ScoreToWin, TargetEntryCount, OrganizerUserId, RulesSnapshot, CreatedAtUtc, UpdatedAtUtc, Version)
-            VALUES (1, 'Existing Cup', 1, 0, 1, 1, 1, 5, 2, 3, 8, 2, 1, 'snapshot', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
-            INSERT INTO TournamentEntries (Id, TournamentId, DisplayNameSnapshot, Status, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 1, 'Existing Team', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Battles (Id, SourceType, ScoreToWin, CreatedByUserId, Status, SideAScore, SideBScore, CreatedAtUtc, Version)
-            VALUES (1, 0, 4, 1, 0, 0, 0, CURRENT_TIMESTAMP, X'01');
-            INSERT INTO BattleLineupSelections (Id, BattleId, UserId, PositionNo, BeybladeId, PlayerDisplayNameSnapshot, BeybladeNameSnapshot, SubmittedAtUtc)
-            VALUES (1, 1, 2, 1, 1, 'Player', 'Existing Blade', CURRENT_TIMESTAMP);
-            INSERT INTO BattleTeamOrderSelections (Id, BattleId, TournamentEntryId, UserId, PositionNo, SubmittedByUserId, SubmittedAtUtc)
-            VALUES (1, 1, 1, 2, 1, 2, CURRENT_TIMESTAMP);
-            """);
-
-        await migrator.MigrateAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT (SELECT SequenceNo FROM BattleLineupSelections), (SELECT SequenceNo FROM BattleTeamOrderSelections)";
-        await using var reader = await command.ExecuteReaderAsync();
-        Assert.True(await reader.ReadAsync());
-        Assert.Equal(1, reader.GetInt32(0));
-        Assert.Equal(1, reader.GetInt32(1));
-    }
-
-    [Fact]
-    public async Task VoidedAuditMigration_PreservesExistingActiveTournamentBattle()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
-        var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260819170457_AddBattleLineupSequenceSubmissions");
-        await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 'void-org', 'hash', 'Organizer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 'void-a', 'hash', 'Player A', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (3, 'void-b', 'hash', 'Player B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Tournaments (Id, Name, Mode, Format, RegistrationMode, RuleSet, Status, RegistrationStage, BeybladesPerPlayer, ScoreToWin, TargetEntryCount, OrganizerUserId, RulesSnapshot, CreatedAtUtc, UpdatedAtUtc, Version)
-            VALUES (1, 'Existing Tournament', 0, 0, 0, 0, 1, 5, 3, 4, 2, 1, 'snapshot', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
-            INSERT INTO TournamentEntries (Id, TournamentId, IndividualUserId, DisplayNameSnapshot, Status, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 1, 2, 'Player A', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 1, 3, 'Player B', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO TournamentMatches (Id, TournamentId, Bracket, RoundNumber, MatchNumber, SequenceNumber, Status, SideASourceKind, SideASourceReferenceId, SideBSourceKind, SideBSourceReferenceId, SideAEntryId, SideBEntryId, IsBye, IsSeedQualifier, IsResetFinal, CreatedAtUtc, UpdatedAtUtc, Version)
-            VALUES (1, 1, 0, 1, 1, 1, 8, 0, 1, 0, 2, 1, 2, 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
-            INSERT INTO Battles (Id, SourceType, ScoreToWin, TournamentMatchId, PlayerAId, PlayerBId, CreatedByUserId, Status, SideAScore, SideBScore, SideADesignation, CreatedAtUtc, StartedAtUtc, Version)
-            VALUES (1, 1, 4, 1, 2, 3, 1, 2, 1, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, X'01');
-            """);
-
-        await migrator.MigrateAsync();
-        context.ChangeTracker.Clear();
-        var battle = await context.Battles.SingleAsync();
-        Assert.Equal(BattleStatus.InProgress, battle.Status);
-        Assert.Equal(1, battle.TournamentMatchId);
-        Assert.Null(battle.VoidedTournamentMatchId);
-        Assert.Null(battle.VoidedByUserId);
-        Assert.Null(battle.VoidedAtUtc);
-        Assert.Null(battle.VoidReason);
-        Assert.Null(battle.VoidSnapshot);
-    }
-
-    [Fact]
-    public async Task RevisionReplayAuditMigration_PreservesExistingRevisionAndEvent()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var context = CreateContext(connection);
-        var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260820015613_AddVoidedTournamentBattleAudit");
-        await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO Users (Id, Account, PasswordHash, DisplayName, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 'revision-a', 'hash', 'Player A', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 'revision-b', 'hash', 'Player B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Beyblades (Id, UserId, Name, IsDeleted, CreatedAtUtc, UpdatedAtUtc)
-            VALUES (1, 1, 'Blade A', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                   (2, 2, 'Blade B', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO Battles (Id, SourceType, ScoreToWin, PlayerAId, PlayerBId, CreatedByUserId, Status, SideAScore, SideBScore, CreatedAtUtc, Version)
-            VALUES (1, 0, 4, 1, 2, 1, 2, 1, 0, CURRENT_TIMESTAMP, X'01');
-            INSERT INTO BattleLineups (Id, BattleId, SequenceNo, PositionNo, PlayerAId, PlayerADisplayNameSnapshot, PlayerABeybladeId, PlayerABeybladeNameSnapshot, PlayerBId, PlayerBDisplayNameSnapshot, PlayerBBeybladeId, PlayerBBeybladeNameSnapshot, IsCurrent)
-            VALUES (1, 1, 1, 1, 1, 'Player A', 1, 'Blade A', 2, 'Player B', 2, 'Blade B', 1);
-            INSERT INTO BattleRounds (Id, BattleId, LineupId, RoundNo, PositionNo, PlayerAId, PlayerADisplayNameSnapshot, PlayerABeybladeId, PlayerABeybladeNameSnapshot, PlayerBId, PlayerBDisplayNameSnapshot, PlayerBBeybladeId, PlayerBBeybladeNameSnapshot, Status, CreatedAtUtc, CompletedAtUtc)
-            VALUES (1, 1, 1, 1, 1, 1, 'Player A', 1, 'Blade A', 2, 'Player B', 2, 'Blade B', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            INSERT INTO BattleRoundEvents (Id, BattleRoundId, EventSequence, EventType, WinnerPlayerId, ResultType, ScoreAwarded, IsEffective, CreatedAtUtc)
-            VALUES (1, 1, 1, 0, 1, 0, 1, 1, CURRENT_TIMESTAMP);
-            INSERT INTO BattleRoundRevisions (Id, BattleRoundId, ChangedByUserId, ChangedAtUtc, Reason, PreviousEffectiveEventSnapshot, NewEffectiveEventSnapshot)
-            VALUES (1, 1, 1, CURRENT_TIMESTAMP, 'existing correction', '{{"score":0}}', '{{"score":1}}');
-            """);
-
-        await migrator.MigrateAsync();
-        context.ChangeTracker.Clear();
-
-        var revision = await context.BattleRoundRevisions.SingleAsync();
-        var roundEvent = await context.BattleRoundEvents.SingleAsync();
-        Assert.Equal("existing correction", revision.Reason);
-        Assert.Equal("{\"score\":0}", revision.PreviousEffectiveEventSnapshot);
-        Assert.Equal("{\"score\":1}", revision.NewEffectiveEventSnapshot);
-        Assert.Equal(string.Empty, revision.PreviousBattleSnapshot);
-        Assert.Equal(string.Empty, revision.NewBattleSnapshot);
-        Assert.Null(roundEvent.InvalidationReason);
+        Assert.Contains("CREATE TABLE \"Battles\"", script);
+        Assert.Contains("CREATE TABLE \"Tournaments\"", script);
+        Assert.Contains("CREATE TABLE \"TournamentMatchParticipants\"", script);
+        Assert.Contains("CREATE TABLE \"QuickBattleInvitations\"", script);
+        Assert.Contains("timestamp with time zone", script);
+        Assert.Contains("GENERATED BY DEFAULT AS IDENTITY", script);
+        Assert.DoesNotContain("Sqlite:", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -271,7 +40,7 @@ public class TournamentPersistenceTests
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var context = CreateContext(connection);
-        await context.Database.MigrateAsync();
+        await context.Database.EnsureCreatedAsync();
 
         var organizer = CreateUser("organizer");
         var tournament = CreateIndividualTournament(organizer);
@@ -291,7 +60,7 @@ public class TournamentPersistenceTests
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var context = CreateContext(connection);
-        await context.Database.MigrateAsync();
+        await context.Database.EnsureCreatedAsync();
 
         var organizer = CreateUser("organizer");
         var player = CreateUser("player");
@@ -330,7 +99,7 @@ public class TournamentPersistenceTests
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var context = CreateContext(connection);
-        await context.Database.MigrateAsync();
+        await context.Database.EnsureCreatedAsync();
 
         var organizer = CreateUser("organizer");
         var tournament = CreateTeamTournament(organizer);
@@ -408,6 +177,11 @@ public class TournamentPersistenceTests
         Assert.Equal("{\"status\":\"Completed\"}", historical.VoidSnapshot);
         Assert.Equal(organizer.Id, historical.VoidedByUserId);
     }
+
+    private static AppDbContext CreatePostgreSqlContext() =>
+        new(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=beyblade;Username=beyblade")
+            .Options);
 
     private static AppDbContext CreateContext(SqliteConnection connection) =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);

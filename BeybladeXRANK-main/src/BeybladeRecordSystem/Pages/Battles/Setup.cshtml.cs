@@ -12,6 +12,7 @@ public class SetupModel(QuickBattleFlowService flowService, BattleService battle
 {
     public QuickBattleWorkspace Workspace { get; private set; } = null!;
     [BindProperty] public List<int> BladeIds { get; set; } = [];
+    [BindProperty] public List<int> ConfigurationIds { get; set; } = [];
     [BindProperty] public BattleSide SideA { get; set; } = BattleSide.B;
 
     public async Task<IActionResult> OnGetAsync(int id)
@@ -25,7 +26,9 @@ public class SetupModel(QuickBattleFlowService flowService, BattleService battle
     }
 
     public async Task<IActionResult> OnPostSubmitLineupAsync(int id) =>
-        RedirectWith(await flowService.SubmitLineupAsync(id, User.GetRequiredUserId(), BladeIds), id, "陣容已密封提交。");
+        RedirectWith(ModelState.IsValid
+            ? await flowService.SubmitLineupAsync(id, User.GetRequiredUserId(), BladeIds, ConfigurationIds)
+            : ServiceResult.Failure("請選擇有效的陀螺與版本。"), id, "陣容已密封提交。");
 
     public async Task<IActionResult> OnPostConfirmAsync(int id) =>
         RedirectWith(await flowService.ConfirmLineupAsync(id, User.GetRequiredUserId()), id, "已確認本版陣容。");

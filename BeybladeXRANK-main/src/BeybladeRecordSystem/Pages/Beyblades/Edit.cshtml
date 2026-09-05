@@ -1,4 +1,36 @@
 @page "{id:int}"
 @model BeybladeRecordSystem.Pages.Beyblades.EditModel
 @{ ViewData["Title"] = "編輯陀螺"; }
-<h1>編輯陀螺</h1><form method="post" class="card card-body col-md-6"><div asp-validation-summary="ModelOnly" class="text-danger"></div><input asp-for="Id" type="hidden" /><label asp-for="Name" class="form-label">名稱</label><input asp-for="Name" class="form-control mb-3" autofocus /><button class="btn btn-primary">儲存</button><a asp-page="Index" class="btn btn-link">取消</a></form>
+<header class="page-header"><div><p class="eyebrow">MY BEYBLADES</p><h1>編輯陀螺</h1><p>管理自訂名稱與零件配置。</p></div></header>
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+@if (Model.Versions.Count > 0)
+{
+    <section class="card card-body col-lg-9 mb-3">
+        <h2 class="h5">配置版本</h2>
+        <p>選擇版本查看或以它為基礎換裝。上蓋名稱相同時，零件變更會新增版本；相同配置不重複建立。</p>
+        @foreach (var version in Model.Versions)
+        {
+            <div class="mb-3">
+                <a asp-route-id="@Model.Id" asp-route-versionId="@version.Id">@version.VersionLabel</a>
+                <div class="small text-muted">@version.PartsSummary</div>
+            </div>
+        }
+        <a asp-page="/Statistics/Beyblade" asp-route-id="@Model.Id">查看總戰績與版本戰績</a>
+    </section>
+}
+<form method="post" class="card card-body col-lg-9">
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    <label asp-for="Name" class="form-label">玩家自訂名稱</label>
+    <input asp-for="Name" class="form-control mb-4" maxlength="100" required autofocus />
+    @if (Model.Configuration is { } configuration)
+    {
+        <p class="text-muted">參考配置：@configuration.VersionLabel。上蓋名稱不同時請<a asp-page="Create">新增另一顆陀螺</a>。</p>
+    }
+    else
+    {
+        <p class="alert alert-info">請補齊完整零件後儲存第一個版本。補登不會改變過去的對戰紀錄。</p>
+    }
+    <partial name="_PartsEditor" model="new BeybladeRecordSystem.Pages.Beyblades.PartsEditorModel(Model.AvailableParts, Model.PartIds)" />
+    <div class="d-flex gap-2 mt-3"><button class="btn btn-primary">儲存</button><a asp-page="Index" class="btn btn-link">取消</a></div>
+</form>
+@section Scripts { <script src="~/js/parts-editor.js" asp-append-version="true"></script> }

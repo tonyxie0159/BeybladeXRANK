@@ -75,7 +75,7 @@ public class TournamentMatchService(AppDbContext db)
             : [];
         var blades = participant is null
             ? []
-            : await db.Beyblades.Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync();
+            : await db.Beyblades.WithConfiguration().Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync();
         return new TournamentMatchWorkspace(match, participant, visible, visibleTeamOrder, privateSelections, privateTeamOrder, blades, isOrganizer);
     }
 
@@ -242,10 +242,11 @@ public class TournamentMatchService(AppDbContext db)
         return ServiceResult.Success();
     }
 
-    public async Task<ServiceResult> SubmitIndividualLineupAsync(int matchId, int userId, IReadOnlyList<int> bladeIds)
-        => await SubmitLineupAsync(matchId, userId, bladeIds);
+    public async Task<ServiceResult> SubmitIndividualLineupAsync(
+        int matchId, int userId, IReadOnlyList<int> bladeIds, IReadOnlyList<int>? configurationIds = null)
+        => await SubmitLineupAsync(matchId, userId, bladeIds, configurationIds);
 
-    public async Task<ServiceResult> SubmitLineupAsync(int matchId, int userId, IReadOnlyList<int> bladeIds)
+    public async Task<ServiceResult> SubmitLineupAsync(int matchId, int userId, IReadOnlyList<int> bladeIds, IReadOnlyList<int>? configurationIds = null)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
         var match = await MatchQuery().SingleOrDefaultAsync(x => x.Id == matchId);
@@ -260,10 +261,12 @@ public class TournamentMatchService(AppDbContext db)
             return ServiceResult.Failure("目前不是陣容提交階段。");
         var existing = match.Battle.LineupSelections.Where(x => x.SequenceNo == 1 && x.UserId == userId).OrderBy(x => x.PositionNo).ToList();
         if (existing.Count > 0)
-            return existing.Select(x => x.BeybladeId).SequenceEqual(bladeIds) ? ServiceResult.Success() : ServiceResult.Failure("陣容已提交，不能再次更換。");
+            return LineupVersions.Matches(existing, bladeIds, configurationIds) ? ServiceResult.Success() : ServiceResult.Failure("陣容已提交，不能再次更換。");
 
-        var blades = await db.Beyblades.Where(x => bladeIds.Contains(x.Id) && x.UserId == userId && !x.IsDeleted).ToDictionaryAsync(x => x.Id);
+        var blades = await db.Beyblades.WithConfiguration().Where(x => bladeIds.Contains(x.Id) && x.UserId == userId && !x.IsDeleted).ToDictionaryAsync(x => x.Id);
         if (blades.Count != expectedCount) return ServiceResult.Failure("所選陀螺必須屬於你且尚未刪除。");
+        var versions = LineupVersions.Resolve(bladeIds, configurationIds, blades);
+        if (!versions.Succeeded) return ServiceResult.Failure(versions.Error!);
         var userName = await db.Users.Where(x => x.Id == userId).Select(x => x.DisplayName).SingleAsync();
         var now = DateTime.UtcNow;
         for (var i = 0; i < bladeIds.Count; i++)
@@ -271,8 +274,8 @@ public class TournamentMatchService(AppDbContext db)
             var blade = blades[bladeIds[i]];
             match.Battle.LineupSelections.Add(new BattleLineupSelection
             {
-                SequenceNo = 1, UserId = userId, PositionNo = i + 1, BeybladeId = blade.Id,
-                PlayerDisplayNameSnapshot = userName, BeybladeNameSnapshot = blade.Name, SubmittedAtUtc = now
+                SequenceNo = 1, UserId = userId, PositionNo = i + 1, BeybladeId = blade.Id, BeybladeConfigurationId = versions.Value![blade.Id]?.Id,
+                PlayerDisplayNameSnapshot = userName, BeybladeNameSnapshot = LineupVersions.Snapshot(blade, versions.Value![blade.Id]), SubmittedAtUtc = now
             });
         }
         await db.SaveChangesAsync();
@@ -383,7 +386,7 @@ public class TournamentMatchService(AppDbContext db)
             match.Battle.LineupSelections.Add(new BattleLineupSelection
             {
                 SequenceNo = sequenceNo, UserId = userId, PositionNo = i + 1,
-                BeybladeId = snapshot.BeybladeId,
+                BeybladeId = snapshot.BeybladeId, BeybladeConfigurationId = snapshot.BeybladeConfigurationId,
                 PlayerDisplayNameSnapshot = snapshot.PlayerDisplayNameSnapshot,
                 BeybladeNameSnapshot = snapshot.BeybladeNameSnapshot,
                 SubmittedAtUtc = now
@@ -843,9 +846,9 @@ public class TournamentMatchService(AppDbContext db)
         {
             SequenceNo = sequenceNo, PositionNo = position,
             PlayerAId = a.UserId, PlayerADisplayNameSnapshot = a.PlayerDisplayNameSnapshot,
-            PlayerABeybladeId = a.BeybladeId, PlayerABeybladeNameSnapshot = a.BeybladeNameSnapshot,
+            PlayerABeybladeId = a.BeybladeId, PlayerAConfigurationId = a.BeybladeConfigurationId, PlayerABeybladeNameSnapshot = a.BeybladeNameSnapshot,
             PlayerBId = b.UserId, PlayerBDisplayNameSnapshot = b.PlayerDisplayNameSnapshot,
-            PlayerBBeybladeId = b.BeybladeId, PlayerBBeybladeNameSnapshot = b.BeybladeNameSnapshot,
+            PlayerBBeybladeId = b.BeybladeId, PlayerBConfigurationId = b.BeybladeConfigurationId, PlayerBBeybladeNameSnapshot = b.BeybladeNameSnapshot,
             IsCurrent = true
         });
     }

@@ -11,8 +11,10 @@
 3. `04-Battle-Rules/`：所有 Battle 共用的計分、事件、狀態與修正原則。
 4. `03-Database/schema.md`、`06-API/endpoints.md`：現行資料與 Application Service 契約。
 5. `05-UI-UX/screens.md`、`07-Statistics/statistics.md`：畫面與查詢輸出規格。
-6. `08-Development/`：實作狀態、待補功能、驗收證據與開發順序；它不會覆寫產品規則。
-7. `09-Deployment/`、`10-AI-Coding-Rules/`：部署及開發紀律。
+6. `08-Development/`：現行工作流程、待補驗收與證據；它不會覆寫產品規則。
+7. `09-Deployment/`、`10-AI-Coding-Rules/agent-rules.md`：部署及開發紀律。
+
+零件功能開發參考：[零件系統與版本設計](03-Database/parts-system.md)、[279 個零件名稱](03-Database/parts-catalog.md)。2026-09-05 定案採同上蓋多版本與兩段出戰選擇。
 
 第三方套件的 `LICENSE.md`、repository 的 `AGENTS.md` 與一般 README 不屬於產品規格，不受上述內容合併規則影響。
 
@@ -30,7 +32,7 @@ GitHub repository 是程式碼與本文件集的共享版本來源。Codex 本�
 4. 建立 commit、推送分支並開啟 draft Pull Request。
 5. 驗證完成後才將 PR 轉為 ready；合併後才是其他環境可取得的正式版本。
 
-不得提交密碼、Token、API Key、SQLite 資料庫、Data Protection keys、`data/`、建置輸出或使用者設定。
+不得提交密碼、Token、API Key、SQLite cutover 資料庫、PostgreSQL dump、Data Protection keys、`data/`、建置輸出或使用者設定。
 
 ## 核心產品
 
@@ -42,7 +44,7 @@ GitHub repository 是程式碼與本文件集的共享版本來源。Codex 本�
 - 單淘汰、雙敗、單循環與瑞士輪。
 - Battle、Round、事件、修正紀錄及來源／B／X Side 戰績。
 
-技術固定為 .NET 10、ASP.NET Core Razor Pages、Bootstrap、Vanilla JavaScript、SignalR、EF Core、SQLite、Docker 與主機側 Cloudflare Tunnel。不採 SPA、獨立 API Server、獨立 DB Container 或 Redis；即時事件只負責通知狀態已變更，所有狀態與規則仍由 Server 與資料庫決定。
+技術固定為 .NET 10、ASP.NET Core Razor Pages、Bootstrap、Vanilla JavaScript、SignalR、EF Core、PostgreSQL 18、Docker 與主機側 Cloudflare Tunnel。不採 SPA、獨立 API Server、第二套正式資料庫或 Redis；即時事件只負責通知狀態已變更，所有狀態與規則仍由 Server 與資料庫決定。
 
 ## 全域有效規則
 
@@ -68,4 +70,4 @@ GitHub repository 是程式碼與本文件集的共享版本來源。Codex 本�
 - 對所有 Battle 一律硬刪除取消資料；硬刪除只適用快速對戰取消。
 - 把 Tournament-scoped 臨時隊伍誤當成永久社群 Team 功能。
 
-目前實作與有效規格之間的差距只記錄在 `08-Development/development-plan.md`，不得以舊文件內容填補。
+現行工作方式與待補驗收入口只記錄在 `08-Development/development-plan.md`；完成狀態只記錄在 `08-Development/acceptance-tests.md`，不得以已刪除的歷史流程填補。

@@ -13,6 +13,7 @@ public class MatchModel(TournamentMatchService matchService, IRealtimePublisher?
 {
     public TournamentMatchWorkspace Workspace { get; private set; } = null!;
     [BindProperty] public List<int> BladeIds { get; set; } = [];
+    [BindProperty] public List<int> ConfigurationIds { get; set; } = [];
     [BindProperty] public List<int> OrderedUserIds { get; set; } = [];
     [BindProperty] public int NewRepresentativeUserId { get; set; }
     [BindProperty] public BattleSide SideA { get; set; } = BattleSide.B;
@@ -38,7 +39,9 @@ public class MatchModel(TournamentMatchService matchService, IRealtimePublisher?
             accept ? "已確認出賽。" : "已拒絕出賽，本場將以不戰勝處理。");
 
     public async Task<IActionResult> OnPostSubmitLineupAsync(int id)
-        => await RedirectWithAsync(await matchService.SubmitLineupAsync(id, User.GetRequiredUserId(), BladeIds), id, "陣容已密封提交。");
+        => await RedirectWithAsync(ModelState.IsValid
+            ? await matchService.SubmitLineupAsync(id, User.GetRequiredUserId(), BladeIds, ConfigurationIds)
+            : ServiceResult.Failure("請選擇有效的陀螺與版本。"), id, "陣容已密封提交。");
 
     public async Task<IActionResult> OnPostSubmitTeamOrderAsync(int id)
         => await RedirectWithAsync(await matchService.SubmitTeamOrderAsync(id, User.GetRequiredUserId(), OrderedUserIds), id, "本隊出戰順序已密封提交。");

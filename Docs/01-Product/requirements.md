@@ -21,10 +21,13 @@
 現行資料保存規則：
 
 - 同一 User 的 Name 不可重複，不同 User 可以同名。
-- `BeybladeId` 是固定配置的識別；實際配置改變時建立新 Beyblade，只有顯示名稱修正使用 Rename。
+- `BeybladeId` 是同一玩家同上蓋名稱的母陀螺識別。完整零件組合不同時新增配置版本；CX 超越／輔助戰刃改變但上蓋命名不變，也歸入同一母陀螺。相同組合重用原版本，上蓋名稱改變才新增陀螺。
 - Delete 採軟刪除，避免破壞既有 Battle、Lineup 與 Round。
 - 軟刪除後不出現在新 Lineup 選擇清單，但歷史資料仍可依 Id 與 Snapshot 顯示。
 - BattleLineup 與 BattleRound 保存玩家及陀螺顯示名稱 Snapshot。
+- 新增陀螺必須選齊零件；編輯頁可補登第一份完整配置或新增版本。出戰先選陀螺再選版本，保存當場版本；重排沿用原配置。舊對戰不因補登而取得零件配置。
+- 陀螺總戰績彙總所有版本，點進詳情再分版本；未記錄配置的舊戰績另列「未記錄版本」。
+- 零件目錄按類別＋名稱去重，支援一般、CX 三件式／四件式及固鎖一體式結構；本階段尚未啟用同隊零件去重或強制配置檢查，詳見 [零件系統](../03-Database/parts-system.md)。
 
 ## 3. 快速對戰建立流程
 
@@ -120,7 +123,7 @@ Client 只提交事件意圖；`ScoreAwarded`、累積比分、Round 狀態與 B
 
 ## 9. 執行與部署
 
-- SQLite、Data Protection keys 與其他 runtime data 保存於 Git 忽略的 `data/`。
-- 本機及 Docker 使用 8080；Docker 將 `/app/data` bind mount 到主機 `data/`。
+- PostgreSQL 保存於 Docker named volume；Data Protection keys 與 cutover 備份保存於 Git 忽略的 `data/`。
+- 本機及 Docker 使用 8080；Docker 只將 `/app/data/keys` bind mount 到主機 `data/keys/`。
 - Cloudflare Tunnel 由主機側連到 `http://localhost:8080`；正式公開前必須完成 forwarded headers、Secure Cookie 與實機連線驗收。
 - Quick Tunnel 只用於開發／短期分享，不宣稱正式 SLA。

@@ -4,6 +4,8 @@
 
 不建立 Statistics Table；每次由 Battle、BattleLineup、BattleRound、有效 BattleRoundEvent 與 TournamentMatch 聚合。
 
+陀螺總戰績按母陀螺 BeybladeId 彙總，個別陀螺頁再依當場 Lineup 的配置 ID 分版本。CX 超越／輔助戰刃改變但命名不變時，也以不同版本列出。null 配置另列「未記錄版本」並計入總數；事後補登不得回填。各版本的勝敗與分數加總等於母陀螺總數；總勝率由總勝敗計算。對手陀螺比較以雙方陀螺及配置 ID 分組，不再使用名稱文字作為識別。
+
 玩家主要分區固定為：
 
 1. 快速對戰。

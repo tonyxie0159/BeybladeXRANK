@@ -273,7 +273,7 @@ public class QuickBattleFlowService(
             : [];
         var visibleSelections = isPrivate ? [] : currentSelections;
         var available = battle.Status == BattleStatus.LineupSelection
-            ? await db.Beyblades.AsNoTracking().Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync()
+            ? await db.Beyblades.AsNoTracking().WithConfiguration().Where(x => x.UserId == userId && !x.IsDeleted).OrderBy(x => x.Name).ToListAsync()
             : [];
         return new QuickBattleWorkspace(
             battle,
@@ -285,7 +285,7 @@ public class QuickBattleFlowService(
             IsEditRequestUsed(battle, userId));
     }
 
-    public async Task<ServiceResult> SubmitLineupAsync(int battleId, int userId, IReadOnlyList<int> orderedBladeIds)
+    public async Task<ServiceResult> SubmitLineupAsync(int battleId, int userId, IReadOnlyList<int> orderedBladeIds, IReadOnlyList<int>? configurationIds = null)
     {
         if (orderedBladeIds.Count != 3 || orderedBladeIds.Any(x => x <= 0) || orderedBladeIds.Distinct().Count() != 3)
             return ServiceResult.Failure("必須依序選擇三顆不同的陀螺。");
@@ -302,14 +302,16 @@ public class QuickBattleFlowService(
             .OrderBy(x => x.PositionNo)
             .ToList();
         if (existing.Count > 0)
-            return existing.Select(x => x.BeybladeId).SequenceEqual(orderedBladeIds)
+            return LineupVersions.Matches(existing, orderedBladeIds, configurationIds)
                 ? ServiceResult.Success()
                 : ServiceResult.Failure("本版陣容已提交，等待雙方公開前不能更換。");
 
-        var blades = await db.Beyblades
+        var blades = await db.Beyblades.WithConfiguration()
             .Where(x => orderedBladeIds.Contains(x.Id) && x.UserId == userId && !x.IsDeleted)
             .ToDictionaryAsync(x => x.Id);
         if (blades.Count != 3) return ServiceResult.Failure("所選陀螺必須屬於你且尚未刪除。");
+        var versions = LineupVersions.Resolve(orderedBladeIds, configurationIds, blades);
+        if (!versions.Succeeded) return ServiceResult.Failure(versions.Error!);
         var displayName = userId == battle.PlayerAId ? battle.PlayerA.DisplayName : battle.PlayerB.DisplayName;
         var now = DateTime.UtcNow;
         for (var index = 0; index < orderedBladeIds.Count; index++)
@@ -320,9 +322,9 @@ public class QuickBattleFlowService(
                 SequenceNo = battle.LineupSequenceNo,
                 UserId = userId,
                 PositionNo = index + 1,
-                BeybladeId = blade.Id,
+                BeybladeId = blade.Id, BeybladeConfigurationId = versions.Value![blade.Id]?.Id,
                 PlayerDisplayNameSnapshot = displayName,
-                BeybladeNameSnapshot = blade.Name,
+                BeybladeNameSnapshot = LineupVersions.Snapshot(blade, versions.Value![blade.Id]),
                 SubmittedAtUtc = now
             });
         }
@@ -501,7 +503,7 @@ public class QuickBattleFlowService(
                 SequenceNo = pendingSequence,
                 UserId = userId,
                 PositionNo = index + 1,
-                BeybladeId = snapshot.BeybladeId,
+                BeybladeId = snapshot.BeybladeId, BeybladeConfigurationId = snapshot.BeybladeConfigurationId,
                 PlayerDisplayNameSnapshot = snapshot.PlayerDisplayNameSnapshot,
                 BeybladeNameSnapshot = snapshot.BeybladeNameSnapshot,
                 SubmittedAtUtc = now
@@ -529,11 +531,11 @@ public class QuickBattleFlowService(
                     PositionNo = index + 1,
                     PlayerAId = battle.PlayerAId!.Value,
                     PlayerADisplayNameSnapshot = playerA[index].PlayerDisplayNameSnapshot,
-                    PlayerABeybladeId = playerA[index].BeybladeId,
+                    PlayerABeybladeId = playerA[index].BeybladeId, PlayerAConfigurationId = playerA[index].BeybladeConfigurationId,
                     PlayerABeybladeNameSnapshot = playerA[index].BeybladeNameSnapshot,
                     PlayerBId = battle.PlayerBId!.Value,
                     PlayerBDisplayNameSnapshot = playerB[index].PlayerDisplayNameSnapshot,
-                    PlayerBBeybladeId = playerB[index].BeybladeId,
+                    PlayerBBeybladeId = playerB[index].BeybladeId, PlayerBConfigurationId = playerB[index].BeybladeConfigurationId,
                     PlayerBBeybladeNameSnapshot = playerB[index].BeybladeNameSnapshot,
                     IsCurrent = true
                 });
@@ -603,12 +605,12 @@ public class QuickBattleFlowService(
         return userId == battle.PlayerAId
             ? initial.Select(x => new BattleLineupSelection
             {
-                UserId = userId, PositionNo = x.PositionNo, BeybladeId = x.PlayerABeybladeId,
+                UserId = userId, PositionNo = x.PositionNo, BeybladeId = x.PlayerABeybladeId, BeybladeConfigurationId = x.PlayerAConfigurationId,
                 PlayerDisplayNameSnapshot = x.PlayerADisplayNameSnapshot, BeybladeNameSnapshot = x.PlayerABeybladeNameSnapshot
             }).ToList()
             : initial.Select(x => new BattleLineupSelection
             {
-                UserId = userId, PositionNo = x.PositionNo, BeybladeId = x.PlayerBBeybladeId,
+                UserId = userId, PositionNo = x.PositionNo, BeybladeId = x.PlayerBBeybladeId, BeybladeConfigurationId = x.PlayerBConfigurationId,
                 PlayerDisplayNameSnapshot = x.PlayerBDisplayNameSnapshot, BeybladeNameSnapshot = x.PlayerBBeybladeNameSnapshot
             }).ToList();
     }
@@ -649,11 +651,11 @@ public class QuickBattleFlowService(
                 PositionNo = index + 1,
                 PlayerAId = battle.PlayerAId!.Value,
                 PlayerADisplayNameSnapshot = playerA[index].PlayerDisplayNameSnapshot,
-                PlayerABeybladeId = playerA[index].BeybladeId,
+                PlayerABeybladeId = playerA[index].BeybladeId, PlayerAConfigurationId = playerA[index].BeybladeConfigurationId,
                 PlayerABeybladeNameSnapshot = playerA[index].BeybladeNameSnapshot,
                 PlayerBId = battle.PlayerBId!.Value,
                 PlayerBDisplayNameSnapshot = playerB[index].PlayerDisplayNameSnapshot,
-                PlayerBBeybladeId = playerB[index].BeybladeId,
+                PlayerBBeybladeId = playerB[index].BeybladeId, PlayerBConfigurationId = playerB[index].BeybladeConfigurationId,
                 PlayerBBeybladeNameSnapshot = playerB[index].BeybladeNameSnapshot,
                 IsCurrent = true
             });

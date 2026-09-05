@@ -395,6 +395,66 @@ public class QuickBattleFlowTests
         Assert.Single(await fixture.Db.BattleRoundRevisions.Where(x => x.BattleRoundId == firstRoundId).ToListAsync());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Configuration_IsCapturedAtSubmission_AndReorderPreservesOriginalSnapshot(bool recordBeforeBattle)
+    {
+        await using var fixture = await QuickBattleFixture.CreateAsync();
+        await PartCatalog.ImportAsync(fixture.Db);
+        var configurationService = new BeybladeConfigurationService(fixture.Db);
+        var ids = await fixture.Db.Parts.Where(x =>
+            (x.Category == PartCategory.Blade && x.Name == "時鐘幻象") ||
+            (x.Category == PartCategory.Ratchet && x.Name == "4-55") ||
+            (x.Category == PartCategory.Bit && x.Name == "S")).Select(x => x.Id).ToArrayAsync();
+        var bladeId = fixture.PlayerABladeIds[0];
+        var originalName = (await fixture.Db.Beyblades.FindAsync(bladeId))!.Name;
+        if (recordBeforeBattle)
+            Assert.True((await configurationService.RecordAsync(fixture.PlayerA.Id, bladeId, ids)).Succeeded);
+        var battleId = await fixture.CreateStartedBattleAsync();
+        if (!recordBeforeBattle)
+            Assert.True((await configurationService.RecordAsync(fixture.PlayerA.Id, bladeId, ids)).Succeeded);
+        var configurationId = await fixture.Db.BeybladeConfigurations.Select(x => x.Id).SingleAsync();
+        int? expected = recordBeforeBattle ? configurationId : null;
+        var expectedName = recordBeforeBattle ? originalName + " · v1 · 時鐘幻象4-55S" : originalName;
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(expected, (await fixture.Db.BattleLineupSelections
+            .SingleAsync(x => x.BattleId == battleId && x.BeybladeId == bladeId)).BeybladeConfigurationId);
+        Assert.Equal(expected, (await fixture.Db.BattleLineups
+            .SingleAsync(x => x.BattleId == battleId && x.PlayerABeybladeId == bladeId)).PlayerAConfigurationId);
+        Assert.Equal(expectedName, (await fixture.Db.BattleLineupSelections
+            .SingleAsync(x => x.BattleId == battleId && x.BeybladeId == bladeId)).BeybladeNameSnapshot);
+        Assert.True((await new BeybladeService(fixture.Db).RenameAsync(fixture.PlayerA.Id, bladeId, "renamed")).Succeeded);
+        var newBitId = await fixture.Db.Parts.Where(x => x.Category == PartCategory.Bit && x.Name == "J").Select(x => x.Id).SingleAsync();
+        var newParts = await fixture.Db.Parts.Where(x => ids.Contains(x.Id) && x.Category != PartCategory.Bit).Select(x => x.Id).ToListAsync();
+        newParts.Add(newBitId);
+        Assert.True((await configurationService.RecordAsync(fixture.PlayerA.Id, bladeId, newParts)).Succeeded);
+        for (var index = 0; index < 3; index++)
+        {
+            var round = await fixture.Db.BattleRounds.SingleAsync(x => x.BattleId == battleId && x.Status == BattleRoundStatus.InProgress);
+            Assert.True((await fixture.Battles.RecordBattleResultAsync(
+                battleId, round.Id, fixture.PlayerA.Id, fixture.PlayerA.Id, ResultType.SpinFinish)).Succeeded);
+            Assert.True((await fixture.Battles.CompleteRoundAsync(battleId, round.Id, fixture.PlayerA.Id)).Succeeded);
+        }
+        Assert.True((await fixture.Flow.SubmitReorderAsync(battleId, fixture.PlayerA.Id, fixture.PlayerABladeIds.AsEnumerable().Reverse().ToArray())).Succeeded);
+        Assert.True((await fixture.Flow.SubmitReorderAsync(battleId, fixture.PlayerB.Id, fixture.PlayerBBladeIds)).Succeeded);
+        fixture.Db.ChangeTracker.Clear();
+        Assert.All(await fixture.Db.BattleLineups.Where(x => x.BattleId == battleId && x.PlayerABeybladeId == bladeId).ToListAsync(),
+            x => { Assert.Equal(expected, x.PlayerAConfigurationId); Assert.Equal(expectedName, x.PlayerABeybladeNameSnapshot); });
+        Assert.Equal(expected, (await fixture.Db.BattleLineupSelections.SingleAsync(
+            x => x.BattleId == battleId && x.SequenceNo == 2 && x.BeybladeId == bladeId)).BeybladeConfigurationId);
+        var nextBattle = await fixture.CreateAcceptedBattleAsync();
+        Assert.False((await fixture.Flow.SubmitLineupAsync(nextBattle, fixture.PlayerA.Id, fixture.PlayerABladeIds)).Succeeded);
+        Assert.False((await fixture.Flow.SubmitLineupAsync(nextBattle, fixture.PlayerA.Id, fixture.PlayerABladeIds, [configurationId, configurationId, 0])).Succeeded);
+        Assert.True((await fixture.Flow.SubmitLineupAsync(nextBattle, fixture.PlayerA.Id, fixture.PlayerABladeIds, [configurationId, 0, 0])).Succeeded);
+        var secondConfigurationId = (await configurationService.GetMineAsync(fixture.PlayerA.Id, bladeId))!.Id;
+        Assert.False((await fixture.Flow.SubmitLineupAsync(nextBattle, fixture.PlayerA.Id, fixture.PlayerABladeIds, [secondConfigurationId, 0, 0])).Succeeded);
+        Assert.Equal(configurationId, (await fixture.Db.BattleLineupSelections.SingleAsync(
+            x => x.BattleId == nextBattle && x.BeybladeId == bladeId)).BeybladeConfigurationId);
+        Assert.Equal("renamed · v1 · 時鐘幻象4-55S", (await fixture.Db.BattleLineupSelections.SingleAsync(
+            x => x.BattleId == nextBattle && x.BeybladeId == bladeId)).BeybladeNameSnapshot);
+    }
+
     private sealed class QuickBattleFixture : IAsyncDisposable
     {
         private readonly SqliteConnection connection;

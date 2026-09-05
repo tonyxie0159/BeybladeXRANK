@@ -1,4 +1,18 @@
 @page
 @model BeybladeRecordSystem.Pages.Beyblades.CreateModel
 @{ ViewData["Title"] = "新增陀螺"; }
-<h1>新增陀螺</h1><form method="post" class="card card-body col-md-6"><input asp-for="ReturnUrl" type="hidden" /><div asp-validation-summary="ModelOnly" class="text-danger"></div><label asp-for="Name" class="form-label">名稱</label><input asp-for="Name" class="form-control mb-3" autofocus /><button class="btn btn-primary">新增</button>@if (!string.IsNullOrWhiteSpace(Model.ReturnUrl)) { <a href="@Model.ReturnUrl" class="btn btn-link">取消並返回對戰</a> } else { <a asp-page="Index" class="btn btn-link">取消</a> }</form>
+<header class="page-header"><div><p class="eyebrow">MY BEYBLADES</p><h1>新增陀螺</h1><p>取個自訂名稱，選齊零件後建立你的陀螺。</p></div></header>
+<form method="post" class="card card-body col-lg-9">
+    <input asp-for="ReturnUrl" type="hidden" />
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    <label asp-for="Name" class="form-label">玩家自訂名稱</label>
+    <input asp-for="Name" class="form-control mb-4" maxlength="100" required autofocus />
+    <partial name="_PartsEditor" model="new BeybladeRecordSystem.Pages.Beyblades.PartsEditorModel(Model.AvailableParts, Model.PartIds)" />
+    <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary">新增陀螺</button>
+        @if (!string.IsNullOrWhiteSpace(Model.ReturnUrl) && Url.IsLocalUrl(Model.ReturnUrl))
+        { <a href="@Model.ReturnUrl" class="btn btn-link">取消並返回對戰</a> }
+        else { <a asp-page="Index" class="btn btn-link">取消</a> }
+    </div>
+</form>
+@section Scripts { <script src="~/js/parts-editor.js" asp-append-version="true"></script> }

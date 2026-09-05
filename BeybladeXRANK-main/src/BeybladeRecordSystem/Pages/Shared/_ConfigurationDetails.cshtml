@@ -1,0 +1,13 @@
+@model BeybladeRecordSystem.Domain.Entities.BeybladeConfiguration
+@using BeybladeRecordSystem.Pages.Beyblades
+<div class="mb-4">
+    <p class="text-muted mb-1">通用名稱（系統產生）</p>
+    <p class="fs-5 fw-semibold">@Model.CommonName</p>
+    <dl class="row">
+        @foreach (var item in Model.Parts.OrderBy(x => x.Part.Category))
+        {
+            <dt class="col-sm-3">@ConfigurationModel.CategoryLabel(item.Part.Category)</dt>
+            <dd class="col-sm-9">@item.PartNameSnapshot</dd>
+        }
+    </dl>
+</div>

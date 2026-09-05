@@ -9,10 +9,14 @@ public class BattleLineup
     public int? PlayerAId { get; set; }
     public string PlayerADisplayNameSnapshot { get; set; } = string.Empty;
     public int PlayerABeybladeId { get; set; }
+    public int? PlayerAConfigurationId { get; set; }
+    public BeybladeConfiguration? PlayerAConfiguration { get; set; }
     public string PlayerABeybladeNameSnapshot { get; set; } = string.Empty;
     public int? PlayerBId { get; set; }
     public string PlayerBDisplayNameSnapshot { get; set; } = string.Empty;
     public int PlayerBBeybladeId { get; set; }
+    public int? PlayerBConfigurationId { get; set; }
+    public BeybladeConfiguration? PlayerBConfiguration { get; set; }
     public string PlayerBBeybladeNameSnapshot { get; set; } = string.Empty;
     public bool IsCurrent { get; set; }
     public Battle Battle { get; set; } = null!;

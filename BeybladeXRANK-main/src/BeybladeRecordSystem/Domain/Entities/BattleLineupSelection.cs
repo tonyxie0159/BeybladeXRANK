@@ -8,6 +8,8 @@ public class BattleLineupSelection
     public int UserId { get; set; }
     public int PositionNo { get; set; }
     public int BeybladeId { get; set; }
+    public int? BeybladeConfigurationId { get; set; }
+    public BeybladeConfiguration? BeybladeConfiguration { get; set; }
     public string PlayerDisplayNameSnapshot { get; set; } = string.Empty;
     public string BeybladeNameSnapshot { get; set; } = string.Empty;
     public DateTime SubmittedAtUtc { get; set; }

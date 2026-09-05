@@ -5,4 +5,26 @@
 @if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
 @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
 @if (!Model.Beyblades.Any()) { <div class="empty-state"><h2>還沒有陀螺</h2><p class="text-muted">先新增至少三顆陀螺，就能完整進行標準快速對戰。</p><a asp-page="Create" class="btn btn-primary">新增第一顆陀螺</a></div> }
-else { <div class="list-group">@foreach (var beyblade in Model.Beyblades) { <div class="list-group-item d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 p-3"><strong>@beyblade.Name</strong><span class="d-flex gap-2"><a asp-page="Edit" asp-route-id="@beyblade.Id" class="btn btn-outline-primary btn-sm">編輯名稱</a><form method="post" asp-page-handler="Delete"><input type="hidden" name="id" value="@beyblade.Id" /><button class="btn btn-outline-danger btn-sm" onclick="return confirm('確定刪除 @beyblade.Name？若已有歷史紀錄，歷史仍會保留當時名稱。')">刪除</button></form></span></div>}</div> }
+else
+{
+    <div class="list-group">
+    @foreach (var beyblade in Model.Beyblades)
+    {
+        <div class="list-group-item d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 p-3">
+            <div>
+                <strong>@beyblade.Name</strong>
+                <div class="text-muted">@(beyblade.UpperName ?? "尚未登錄零件") · @beyblade.Configurations.Count 個版本</div>
+                @if (beyblade.Configuration is { } latest) { <small class="text-muted">最新：@latest.VersionLabel</small> }
+            </div>
+            <span class="d-flex gap-2">
+                <a asp-page="Edit" asp-route-id="@beyblade.Id" class="btn btn-outline-primary btn-sm">@(beyblade.Configuration is null ? "編輯／補登零件" : "編輯／新增版本")</a>
+                <a asp-page="/Statistics/Beyblade" asp-route-id="@beyblade.Id" class="btn btn-outline-secondary btn-sm">戰績</a>
+                <form method="post" asp-page-handler="Delete">
+                    <input type="hidden" name="id" value="@beyblade.Id" />
+                    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('確定刪除此陀螺？歷史仍會保留當時名稱。')">刪除</button>
+                </form>
+            </span>
+        </div>
+    }
+    </div>
+}
